@@ -21,7 +21,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from factorlab.fmp_client import FMPClient, ART
 
-UA = "factor_lab phase-1 research probe (contact: you@yourdomain.com)"
+UA = "factor_lab phase-1 research probe (contact: pcassidy372@gmail.com)"
 KHC_CIK = "0001637459"
 BBBY_SERVED_CIK = "0001130713"    # what FMP's BBBY profile returned in session 1
 BBBY_ORIGINAL_CIK = "0000886158"  # believed original Bed Bath & Beyond - EDGAR settles it
@@ -50,7 +50,7 @@ def close(a, b):
 
 
 def main():
-    assert "you@yourdomain.com" not in UA, "set a real contact in UA - SEC requires it"
+    assert "YOUR_EMAIL_HERE" not in UA, "set a real contact in UA - SEC requires it"
     c = FMPClient()
     report = {}
 
