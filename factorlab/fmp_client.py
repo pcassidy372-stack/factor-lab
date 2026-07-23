@@ -44,6 +44,9 @@ ENDPOINTS = {
         ("/stable/cash-flow-statement", {"symbol": "{symbol}", "period": "quarter", "limit": "{limit}"}),
         ("/api/v3/cash-flow-statement/{symbol}", {"period": "quarter", "limit": "{limit}"}),
     ],
+    "income_a": [
+        ("/stable/income-statement", {"symbol": "{symbol}", "period": "annual", "limit": "{limit}"}),
+    ],
     "income_as_reported": [
         ("/stable/income-statement-as-reported", {"symbol": "{symbol}", "period": "quarter", "limit": "{limit}"}),
         ("/api/v3/income-statement-as-reported/{symbol}", {"period": "quarter", "limit": "{limit}"}),
@@ -72,11 +75,13 @@ ENDPOINTS = {
     ],
     "mna_search": [
         ("/stable/mergers-acquisitions-search", {"name": "{name}"}),
-        ("/api/v4/mergers-acquisitions/search", {"name": "{name}"}),
+    ],
+    "mna_latest": [
+        ("/stable/mergers-acquisitions-latest", {"page": "{page}", "limit": "100"}),
     ],
     "surprises": [
-        ("/stable/earnings-surprises", {"symbol": "{symbol}"}),
-        ("/api/v3/earnings-surprises/{symbol}", {}),
+        ("/stable/earnings", {"symbol": "{symbol}", "limit": "{limit}"}),
+        ("/stable/earnings-report", {"symbol": "{symbol}", "limit": "{limit}"}),
     ],
     "estimates": [
         ("/stable/analyst-estimates", {"symbol": "{symbol}", "period": "annual", "limit": "{limit}"}),
@@ -87,8 +92,12 @@ ENDPOINTS = {
         ("/api/v4/insider-trading", {"symbol": "{symbol}", "page": "0"}),
     ],
     "inst_ownership": [
-        ("/stable/institutional-ownership/symbol-ownership", {"symbol": "{symbol}"}),
-        ("/api/v4/institutional-ownership/symbol-ownership", {"symbol": "{symbol}", "includeCurrentQuarter": "false"}),
+        ("/stable/institutional-ownership/symbol-positions-summary", {"symbol": "{symbol}", "year": "{year}", "quarter": "{quarter}"}),
+        ("/stable/institutional-ownership/positions-summary", {"symbol": "{symbol}", "year": "{year}", "quarter": "{quarter}"}),
+        ("/stable/institutional-ownership/latest", {"page": "0"}),
+    ],
+    "inst_filing_dates": [
+        ("/stable/institutional-ownership/dates", {"cik": "{cik}"}),
     ],
     "treasury": [
         ("/stable/treasury-rates", {}),
