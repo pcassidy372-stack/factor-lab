@@ -167,3 +167,11 @@ MIGRATIONS[4] = """
 ALTER TABLE price_recon ADD COLUMN n_seam INT NOT NULL DEFAULT 0;
 ALTER TABLE price_recon ADD COLUMN n_oracle_bad INT NOT NULL DEFAULT 0;
 """
+
+MIGRATIONS[5] = """
+CREATE TABLE mktcap_ingest (
+    security_id INT PRIMARY KEY REFERENCES securities(security_id),
+    n_months    INT NOT NULL,
+    ran_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""

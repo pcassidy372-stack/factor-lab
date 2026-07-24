@@ -70,7 +70,8 @@ ENDPOINTS = {
         ("/api/v3/historical-price-full/stock_split/{symbol}", {}),
     ],
     "mktcap_hist": [
-        ("/stable/historical-market-capitalization", {"symbol": "{symbol}", "limit": "{limit}"}),
+        ("/stable/historical-market-capitalization", {"symbol": "{symbol}", "limit": "{limit}",
+                                                      "from": "{date_from}", "to": "{date_to}"}),
         ("/api/v3/historical-market-capitalization/{symbol}", {"limit": "{limit}"}),
     ],
     "mna_search": [
@@ -140,7 +141,11 @@ class FMPClient:
     def _call(self, path, params):
         for attempt in range(4):
             self._throttle()
-            r = requests.get(BASE + path, params={**params, "apikey": self.key}, timeout=30)
+            try:
+                r = requests.get(BASE + path, params={**params, "apikey": self.key}, timeout=60)
+            except requests.exceptions.RequestException:
+                time.sleep(2 ** (attempt + 1))
+                continue
             if r.status_code == 429:
                 time.sleep(2 ** (attempt + 1))
                 continue
