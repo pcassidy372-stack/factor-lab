@@ -118,3 +118,33 @@ CREATE TABLE universe_snapshots (
     PRIMARY KEY (asof, security_id)
 );
 """
+
+MIGRATIONS[2] = """
+-- profile snapshots: classification is snapshotted, never assumed (review item 9)
+CREATE TABLE profile_snapshots (
+    security_id INT  NOT NULL REFERENCES securities(security_id),
+    asof        DATE NOT NULL,
+    symbol      TEXT,
+    sector      TEXT,
+    industry    TEXT,
+    exchange    TEXT,
+    is_active   BOOLEAN,
+    is_adr      BOOLEAN,
+    country     TEXT,
+    currency    TEXT,
+    ipo_date    DATE,
+    raw         JSONB NOT NULL,
+    PRIMARY KEY (security_id, asof)
+);
+
+-- ambiguity is recorded, never guessed (spec s3)
+CREATE TABLE identity_quarantine (
+    qid        SERIAL PRIMARY KEY,
+    symbol     TEXT NOT NULL,
+    issue      TEXT NOT NULL,
+    detail     JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved   BOOLEAN NOT NULL DEFAULT false
+);
+CREATE INDEX identity_quarantine_symbol_idx ON identity_quarantine(symbol);
+"""

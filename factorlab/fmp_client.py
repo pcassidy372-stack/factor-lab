@@ -99,6 +99,14 @@ ENDPOINTS = {
     "inst_filing_dates": [
         ("/stable/institutional-ownership/dates", {"cik": "{cik}"}),
     ],
+    "census": [
+        ("/stable/company-screener", {"exchange": "{exchange}", "limit": "5000",
+                                      "isEtf": "false", "isFund": "false",
+                                      "isActivelyTrading": "true"}),
+        ("/stable/stock-screener", {"exchange": "{exchange}", "limit": "5000",
+                                    "isEtf": "false", "isFund": "false",
+                                    "isActivelyTrading": "true"}),
+    ],
     "treasury": [
         ("/stable/treasury-rates", {}),
         ("/api/v4/treasury", {}),
