@@ -249,11 +249,12 @@ def main():
     delist_by_sym = defaultdict(list)
     for r in delisted:
         ex = (r.get("exchange") or "").upper()
-        if ex in MAJORS and r.get("symbol"):
+        if r.get("symbol") and any(m in ex for m in ("NYSE", "NASDAQ", "AMEX")):
             delist_by_sym[r["symbol"]].append(r)
     deal_targets = {d.get("targetedSymbol") for d in deals if d.get("targetedSymbol")}
     actives = census_symbols(c)
-    targets = sorted(set(actives) | set(delist_by_sym))
+    targets = sorted(set(actives) | set(delist_by_sym)
+                     | {x["symbol"] for x in SAMPLE} | {t for t in deal_targets if t})
     print("  targets: %d active + %d delisted-feed = %d unique" % (
         len(actives), len(delist_by_sym), len(targets)))
 
