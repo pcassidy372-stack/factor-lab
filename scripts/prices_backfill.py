@@ -68,14 +68,22 @@ def fetch_series(c, symbols, lo, hi):
                 d, v = row.get("date"), row.get("adjClose")
                 if d and v:
                     ora[d] = float(v)
-        for dv in c.get("dividends", symbol=sym, limit=1000, allow_empty=True):
+        try:
+            divs = c.get("dividends", symbol=sym, limit=1000, allow_empty=True)
+        except Exception:
+            divs = []
+        for dv in divs:
             d = dv.get("date")
             amt = dv.get("dividend") or dv.get("adjDividend")
             if d and amt and lo <= d <= hi and d not in split_by:
                 if div_by[d] == 0.0:
                     n_div += 1
                 div_by[d] = max(div_by[d], float(amt))
-        for sp in c.get("splits", symbol=sym, allow_empty=True):
+        try:
+            spls = c.get("splits", symbol=sym, allow_empty=True)
+        except Exception:
+            spls = []
+        for sp in spls:
             d, r = sp.get("date"), split_ratio(sp)
             if d and r and lo <= d <= hi and d not in split_by:
                 split_by[d] = r
