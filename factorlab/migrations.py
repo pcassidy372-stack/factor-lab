@@ -148,3 +148,22 @@ CREATE TABLE identity_quarantine (
 );
 CREATE INDEX identity_quarantine_symbol_idx ON identity_quarantine(symbol);
 """
+
+MIGRATIONS[3] = """
+-- per-security reconciliation record; presence = ingestion-complete marker
+CREATE TABLE price_recon (
+    security_id    INT PRIMARY KEY REFERENCES securities(security_id),
+    n_days         INT,
+    match_pct      NUMERIC,
+    first_mismatch DATE,
+    n_prices       INT,
+    n_div          INT,
+    n_split        INT,
+    ran_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+MIGRATIONS[4] = """
+ALTER TABLE price_recon ADD COLUMN n_seam INT NOT NULL DEFAULT 0;
+ALTER TABLE price_recon ADD COLUMN n_oracle_bad INT NOT NULL DEFAULT 0;
+"""
