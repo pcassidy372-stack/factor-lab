@@ -101,8 +101,31 @@ def phase_a(c, db):
     print("  sweep done: %s" % dict(counts))
 
 
+def excluded_instruments(db):
+    """Spec s5/s8: common stock only, no ADRs (v1). Symbol-convention +
+    profile is_adr exclusion set, with counts printed."""
+    import re
+    suf = re.compile(r"-(P[A-Z]?|UN|WS|WT|R|U)$")
+    rows = db.safe(lambda cur: (cur.execute(
+        "SELECT security_id, string_agg(DISTINCT symbol, ',') FROM symbol_map GROUP BY 1"),
+        cur.fetchall())[1])
+    inst = set()
+    for sec, syms in rows:
+        for sym in (syms or "").split(","):
+            if suf.search(sym) or (len(sym) == 5 and sym[4] in "UWR"):
+                inst.add(sec)
+                break
+    adr = db.safe(lambda cur: (cur.execute(
+        """SELECT DISTINCT security_id FROM profile_snapshots WHERE is_adr"""),
+        {r[0] for r in cur.fetchall()})[1])
+    print("  excluded: %d instrument-class, %d ADR (overlap %d)" % (
+        len(inst), len(adr), len(inst & adr)))
+    return inst | adr
+
+
 def phase_b(db):
     banner("B. UNIVERSE REBUILD")
+    excl = excluded_instruments(db)
     month_ends = db.safe(lambda cur: (cur.execute("""
         SELECT max(d) FROM prices_raw_d GROUP BY date_trunc('month', d) ORDER BY 1"""),
         [str(r[0]) for r in cur.fetchall()])[1])
@@ -125,6 +148,7 @@ def phase_b(db):
 
     out, n_rows, cur_sec, series = [], 0, None, []
 
+    excl = excl  # closure capture
     def flush_series(sec, series):
         rows = []
         by_ym = {}
@@ -145,7 +169,8 @@ def phase_b(db):
                 adv = window[len(window) // 2]
             mc = cap.get((sec, ym))
             gap = (date.fromisoformat(asof) - date.fromisoformat(d)).days
-            inu = bool(mc and adv and mc >= 300e6 and adv >= 2e6 and px >= 3.0 and gap <= 5)
+            inu = bool(mc and adv and mc >= 300e6 and adv >= 2e6 and px >= 3.0
+                       and gap <= 5 and sec not in excl)
             rows.append((asof, sec, mc, adv, px, inu, None))
         return rows
 

@@ -129,8 +129,11 @@ def process_security(db, c, sec, symbols, lo, hi):
     n_oracle_bad = len(bad)                 # R17: oracle-insane days excluded
     common = [d for d in common_all if d not in set(bad)]
     prev = {d1: closes[d0] for d0, d1 in zip(dates, dates[1:])}
+    odates = sorted(ora)
+    oprev = {d1: ora[d0] for d0, d1 in zip(odates, odates[1:])}
     mism = [d for d in common
-            if abs(rets[d] - orets[d]) > max(0.001, 0.011 / prev.get(d, 1e9))]
+            if abs(rets[d] - orets[d]) > max(0.001, 0.011 / prev.get(d, 1e9),
+                                             0.011 / oprev.get(d, 1e9))]     # R15b
     match = round(100.0 * (1 - len(mism) / len(common)), 2) if common else None
     if match is not None and n_oracle_bad > max(10, 0.02 * len(common_all)):
         match = None                        # R17b: oracle unusable for this name
