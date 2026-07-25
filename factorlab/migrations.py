@@ -175,3 +175,12 @@ CREATE TABLE mktcap_ingest (
     ran_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
+
+MIGRATIONS[6] = """
+CREATE TABLE fund_ingest (
+    security_id INT PRIMARY KEY REFERENCES securities(security_id),
+    n_periods   INT NOT NULL,
+    n_cik_reject INT NOT NULL DEFAULT 0,
+    ran_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
