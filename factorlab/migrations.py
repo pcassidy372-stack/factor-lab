@@ -184,3 +184,26 @@ CREATE TABLE fund_ingest (
     ran_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
+
+MIGRATIONS[7] = """
+CREATE TABLE surprises (
+    security_id INT NOT NULL REFERENCES securities(security_id),
+    report_date DATE NOT NULL,
+    eps_actual NUMERIC, eps_est NUMERIC,
+    rev_actual NUMERIC, rev_est NUMERIC,
+    sue NUMERIC,
+    PRIMARY KEY (security_id, report_date)
+);
+CREATE TABLE sue_ingest (
+    security_id INT PRIMARY KEY REFERENCES securities(security_id),
+    n_rows INT NOT NULL, ran_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE estimates_snapshots (
+    asof DATE NOT NULL,
+    security_id INT NOT NULL REFERENCES securities(security_id),
+    fy_date DATE NOT NULL,
+    eps_avg NUMERIC, eps_n INT, rev_avg NUMERIC, rev_n INT,
+    raw JSONB NOT NULL,
+    PRIMARY KEY (asof, security_id, fy_date)
+);
+"""
