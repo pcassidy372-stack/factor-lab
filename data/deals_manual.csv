@@ -1,0 +1,6 @@
+symbol,acquirer_symbol,cash_per_share,stock_ratio,close_date,note
+CERN,ORCL,95.00,0,2022-06-08,Oracle all-cash
+ALXN,AZN,60.00,2.1243,2021-07-21,AstraZeneca cash+ADS
+XLNX,AMD,0,1.7234,2022-02-14,AMD all-stock
+MXIM,ADI,0,0.6300,2021-08-26,Analog Devices all-stock
+YELL,,,,2023-08-07,ch11 - equity partially RECOVERED via asset sales; stays rung3-flagged; verify recovery before any terminal value
