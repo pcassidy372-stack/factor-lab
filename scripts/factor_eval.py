@@ -116,6 +116,8 @@ def main():
         }
         ic_rows += [(fid, a, 1, ic, nn) for a, ic, nn in ics]
         ls_rows += [(fid, a, l, t, b, nn) for a, l, t, b, nn in ls]
+    cur.execute("DELETE FROM factor_ic")
+    cur.execute("DELETE FROM factor_ls")
     execute_values(cur, "INSERT INTO factor_ic (factor_id, asof, horizon_m, ic, n) VALUES %s",
                    ic_rows, page_size=5000)
     execute_values(cur, "INSERT INTO factor_ls (factor_id, asof, ls_ret, q_top, q_bot, n) VALUES %s",
