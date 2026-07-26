@@ -252,3 +252,21 @@ CREATE TABLE factor_ls (
     PRIMARY KEY (factor_id, asof)
 );
 """
+
+MIGRATIONS[10] = """
+CREATE TABLE benchmarks_m (
+    asof   DATE NOT NULL,
+    symbol TEXT NOT NULL,
+    tr     NUMERIC NOT NULL,
+    PRIMARY KEY (asof, symbol)
+);
+"""
+
+MIGRATIONS[10] = """
+CREATE TABLE benchmarks_m (
+    asof   DATE NOT NULL,
+    symbol TEXT NOT NULL,
+    tr     NUMERIC NOT NULL,
+    PRIMARY KEY (asof, symbol)
+);
+"""
