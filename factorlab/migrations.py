@@ -207,3 +207,14 @@ CREATE TABLE estimates_snapshots (
     PRIMARY KEY (asof, security_id, fy_date)
 );
 """
+
+MIGRATIONS[8] = """
+CREATE TABLE job_log (
+    job        TEXT NOT NULL,
+    period_key TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    detail     JSONB,
+    ran_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (job, period_key)
+);
+"""

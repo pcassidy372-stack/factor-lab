@@ -100,6 +100,14 @@ ENDPOINTS = {
     "inst_filing_dates": [
         ("/stable/institutional-ownership/dates", {"cik": "{cik}"}),
     ],
+    "dividends_calendar": [
+        ("/stable/dividends-calendar", {"from": "{date_from}", "to": "{date_to}"}),
+        ("/stable/dividend-calendar", {"from": "{date_from}", "to": "{date_to}"}),
+    ],
+    "splits_calendar": [
+        ("/stable/splits-calendar", {"from": "{date_from}", "to": "{date_to}"}),
+        ("/stable/split-calendar", {"from": "{date_from}", "to": "{date_to}"}),
+    ],
     "census": [
         ("/stable/company-screener", {"exchange": "{exchange}", "limit": "5000",
                                       "isEtf": "false", "isFund": "false",
