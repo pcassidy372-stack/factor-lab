@@ -29,11 +29,7 @@ def nw_t(x, lag):
     for j in range(1, lag + 1):
         gj = (e[j:] * e[:-j]).sum() / n
         var += 2 * (1 - j / (lag + 1)) * gj
-    return x.mean() / np.sqrt(var / n)
-
-
-def main():
-    cx = conn()
+    return x.mean() / np.sqrt(var / n)    return x.mean() / npconn()
     cur = cx.cursor()
     cur.execute("SELECT DISTINCT asof FROM universe_snapshots ORDER BY asof")
     asofs = [str(r[0]) for r in cur.fetchall()]
