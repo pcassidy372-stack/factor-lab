@@ -138,6 +138,16 @@ def main():
     check("T8", med is not None and 0.1 <= float(med) <= 5 and wild < 0.01 * n_sue,
           "median|SUE|=%s wild=%d fill=%d/%d" % (med, wild, n_sue, n))
 
+    print("T9 derived-board integrity")
+    cur.execute("SELECT count(DISTINCT asof) FROM universe_snapshots")
+    ua = cur.fetchone()[0]
+    cur.execute("SELECT count(DISTINCT asof), count(DISTINCT factor_id) FROM factor_values")
+    fa, ff = cur.fetchone()
+    cur.execute("SELECT count(*) FROM factor_definitions")
+    nreg = cur.fetchone()[0]
+    check("T9", (fa == 0) or (fa == ua and ff == nreg),
+          "factor asofs=%d/%d factors=%d/%d (0/0 legal pre-Phase-1)" % (fa, ua, ff, nreg))
+
     print("\nGOLDEN GATE: %s (%d/%d)" % ("PASS" if all(RESULTS) else "FAIL",
                                           sum(RESULTS), len(RESULTS)))
     cx.close()
