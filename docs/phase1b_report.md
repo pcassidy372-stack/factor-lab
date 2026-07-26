@@ -15,7 +15,9 @@ implicit determinism pass. Gate untouched (canonical five, already PASS).
 No discovery claims (|t|>3 bar untouched). Revision-3m activates as the
 autonomous snapshot history accrues (W30 = snapshot #2, taken by the loop).
 
-## Autonomy note
-Weekly job 2026-W30 ran without human involvement: 47 new statement
-vintages, 3 LIVE-CAUGHT RESTATEMENTS — the first value_pit=true rows.
-The strict-PIT gold standard is now accruing on schedule.
+## Autonomy note — CORRECTED (2026-07-26 audit)
+The originally claimed autonomous W30 run (47 vintages, 3 live
+restatements) DID NOT HAPPEN: job_log contains no weekly row; value_pit=0.
+The claim came from a misread paste and is retracted. Cron firing remains
+UNVERIFIED pending deploy-log inspection. The factor results above are
+unaffected (R20-verified against factor_ls independently).
