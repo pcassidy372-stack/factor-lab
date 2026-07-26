@@ -127,7 +127,9 @@ def phase_b(db):
     banner("B. UNIVERSE REBUILD")
     excl = excluded_instruments(db)
     month_ends = db.safe(lambda cur: (cur.execute("""
-        SELECT max(d) FROM prices_raw_d GROUP BY date_trunc('month', d) ORDER BY 1"""),
+        SELECT max(d) FROM (SELECT d FROM prices_raw_d GROUP BY d
+                            HAVING count(*) >= 100) t
+        GROUP BY date_trunc('month', d) ORDER BY 1"""),
         [str(r[0]) for r in cur.fetchall()])[1])
     asof_by_ym = {a[:7]: a for a in month_ends}
     print("  month-end asofs: %d (%s .. %s)" % (len(month_ends), month_ends[0], month_ends[-1]))
