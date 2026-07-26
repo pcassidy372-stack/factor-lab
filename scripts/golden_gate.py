@@ -139,7 +139,8 @@ def main():
           "median|SUE|=%s wild=%d fill=%d/%d" % (med, wild, n_sue, n))
 
     print("T9 derived-board integrity")
-    cur.execute("SELECT count(DISTINCT asof) FROM universe_snapshots")
+    cur.execute("""SELECT count(DISTINCT asof) FROM universe_snapshots
+                   WHERE in_universe""")
     ua = cur.fetchone()[0]
     cur.execute("SELECT count(DISTINCT asof), count(DISTINCT factor_id) FROM factor_values")
     fa, ff = cur.fetchone()
