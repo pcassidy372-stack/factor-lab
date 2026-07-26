@@ -44,8 +44,8 @@ def main():
         TR[sec][str(d)] = float(tr)
     cur.execute("SELECT security_id, max(d) FROM tr_index_d GROUP BY 1")
     LAST = {sec: str(d) for sec, d in cur.fetchall()}
-    cur.execute("""SELECT security_id, tr FROM tr_index_d t
-                   WHERE d = (SELECT max(d) FROM tr_index_d WHERE security_id=t.security_id)""")
+    cur.execute("""SELECT DISTINCT ON (security_id) security_id, tr
+                   FROM tr_index_d ORDER BY security_id, d DESC""")
     TRLAST = {sec: float(tr) for sec, tr in cur.fetchall()}
     cur.execute("SELECT security_id, delist_date, terminal_return, terminal_method FROM delistings")
     DL = {sec: (str(d), tr, m) for sec, d, tr, m in cur.fetchall()}
