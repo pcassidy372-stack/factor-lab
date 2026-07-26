@@ -218,3 +218,37 @@ CREATE TABLE job_log (
     PRIMARY KEY (job, period_key)
 );
 """
+
+MIGRATIONS[9] = """
+CREATE TABLE factor_definitions (
+    factor_id     TEXT PRIMARY KEY,
+    version       INT NOT NULL,
+    family        TEXT NOT NULL,
+    formula_text  TEXT NOT NULL,
+    formula_hash  TEXT NOT NULL,
+    params        JSONB NOT NULL,
+    prior_sign    INT NOT NULL,
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    frozen        BOOLEAN NOT NULL DEFAULT true
+);
+CREATE TABLE factor_values (
+    asof          DATE NOT NULL,
+    security_id   INT NOT NULL REFERENCES securities(security_id),
+    factor_id     TEXT NOT NULL REFERENCES factor_definitions(factor_id),
+    raw           NUMERIC,
+    rank_norm     NUMERIC,
+    z_sector      NUMERIC,
+    z_sector_size NUMERIC,
+    PRIMARY KEY (asof, security_id, factor_id)
+);
+CREATE INDEX factor_values_fid_asof ON factor_values(factor_id, asof);
+CREATE TABLE factor_ic (
+    factor_id TEXT NOT NULL, asof DATE NOT NULL, horizon_m INT NOT NULL,
+    ic NUMERIC, n INT, PRIMARY KEY (factor_id, asof, horizon_m)
+);
+CREATE TABLE factor_ls (
+    factor_id TEXT NOT NULL, asof DATE NOT NULL,
+    ls_ret NUMERIC, q_top NUMERIC, q_bot NUMERIC, n INT,
+    PRIMARY KEY (factor_id, asof)
+);
+"""
