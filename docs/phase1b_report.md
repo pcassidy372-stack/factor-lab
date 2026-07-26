@@ -1,3 +1,9 @@
+> **SUPERSEDED (2026-07-26) by phase1_findings_v2.md.** The numbers in
+> this document were produced on the phantom-asof grid by eval code in
+> unreconstructible paste-corrupted states, with a UMD test miskeyed by
+> one month since inception. See v2 for the forensic chain and the
+> verified results.
+
 # Phase 1b Report — Registry Breadth (2026-07-25, R20-verified)
 
 Evidence: factor_eval_1b.log, phase1_eval.json, factor_ls (10 factors,
