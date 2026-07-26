@@ -151,7 +151,8 @@ def main():
                     umd[parts[0]] = float(parts[1]) / 100.0
                 except ValueError:
                     pass
-        ours = {a[:7].replace("-", ""): l for f, a, l, t, b, nn in ls_rows if f == "mom_12_1"}
+        ours = {nxt[a][:7].replace("-", ""): l for f, a, l, t, b, nn in ls_rows
+                if f == "mom_12_1" and a in nxt}
         common = sorted(set(umd) & set(ours))
         if len(common) >= 24:
             a1 = np.array([ours[k] for k in common])
