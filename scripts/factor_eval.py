@@ -123,7 +123,9 @@ def main():
     cx.commit()
 
     print("=" * 12, "FACTOR TABLE (1m horizon, z_sector_size)", "=" * 12)
-    for fid in ("ebit_ev", "gp_a", "accruals", "asset_growth", "mom_12_1"):
+    cur.execute("SELECT factor_id FROM factor_definitions ORDER BY family, factor_id")
+    table_fids = [r[0] for r in cur.fetchall()]
+    for fid in table_fids:
         r = results.get(fid)
         if not r:
             print("  %-13s NO DATA" % fid)
