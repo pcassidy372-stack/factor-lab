@@ -51,9 +51,10 @@ def finish(db, job, key, status, detail):
 
 def active_secs(db):
     return db.safe(lambda cur: (cur.execute("""
-        SELECT sm.security_id, sm.symbol FROM symbol_map sm
-        JOIN securities s USING (security_id)
-        WHERE sm.valid_to IS NULL AND s.status='active'"""), cur.fetchall())[1])
+        SELECT DISTINCT ON (sm.security_id) sm.security_id, sm.symbol
+        FROM symbol_map sm JOIN securities s USING (security_id)
+        WHERE sm.valid_to IS NULL AND s.status='active'
+        ORDER BY sm.security_id, sm.valid_from DESC"""), cur.fetchall())[1])
 
 
 def job_daily(db):
@@ -300,6 +301,7 @@ def job_monthly(db):
                 if ym not in monthly or d > monthly[ym][0]:
                     monthly[ym] = (d, float(v))
         rows.extend((d, sec, v) for d, v in monthly.values())
+    rows = list({(d, sec): (d, sec, v) for d, sec, v in rows}.values())
     if rows:
         db.safe(lambda cur: execute_values(cur, """INSERT INTO mktcap_m
             (asof, security_id, mktcap) VALUES %s
