@@ -29,7 +29,11 @@ def nw_t(x, lag):
     for j in range(1, lag + 1):
         gj = (e[j:] * e[:-j]).sum() / n
         var += 2 * (1 - j / (lag + 1)) * gj
-    return x.mean() / np.sqrt(var / n)    return x.mean() / npconn()
+    return x.mean() / np.sqrt(var / n)
+
+
+def main():
+    cx = conn()
     cur = cx.cursor()
     cur.execute("SELECT DISTINCT asof FROM universe_snapshots ORDER BY asof")
     asofs = [str(r[0]) for r in cur.fetchall()]
@@ -40,10 +44,10 @@ def nw_t(x, lag):
         TR[sec][str(d)] = float(tr)
     cur.execute("SELECT security_id, max(d) FROM tr_index_d GROUP BY 1")
     LAST = {sec: str(d) for sec, d in cur.fetchall()}
-    cur.execute("SELECT security_id, tr FROM tr_index_d t WHERE d = (SELECT max(d) FROM tr_index_d WHERE security_id=t.security_id)")
+    cur.execute("""SELECT security_id, tr FROM tr_index_d t
+                   WHERE d = (SELECT max(d) FROM tr_index_d WHERE security_id=t.security_id)""")
     TRLAST = {sec: float(tr) for sec, tr in cur.fetchall()}
-    cur.execute("""SELECT security_id, delist_date, terminal_return, terminal_method
-                   FROM delistings""")
+    cur.execute("SELECT security_id, delist_date, terminal_return, terminal_method FROM delistings")
     DL = {sec: (str(d), tr, m) for sec, d, tr, m in cur.fetchall()}
     cur.execute("SELECT factor_id, prior_sign FROM factor_definitions")
     SIGN = dict(cur.fetchall())
@@ -90,6 +94,8 @@ def nw_t(x, lag):
             q = np.quantile(z, [0.1, 0.9])
             top, bot = r[z >= q[1]].mean(), r[z <= q[0]].mean()
             ls.append((a, float(top - bot), float(top), float(bot), len(pairs)))
+        if len(ls) < 24:
+            continue
         ic_v = np.array([x[1] for x in ics])
         ls_v = np.array([x[1] for x in ls])
         boots = []
@@ -122,10 +128,9 @@ def nw_t(x, lag):
         if not r:
             print("  %-13s NO DATA" % fid)
             continue
-        sgn = SIGN.get(fid, 1)
         print("  %-13s prior=%+d months=%d | IC mean=%+.4f ICIR=%+.2f t=%+.2f | "
               "LS ann=%+.2f%% t=%+.2f CI_m=[%+.4f,%+.4f]" % (
-                  fid, sgn, r["months"], r["mean_ic"], r["icir"], r["ic_nw_t"],
+                  fid, SIGN.get(fid, 1), r["months"], r["mean_ic"], r["icir"], r["ic_nw_t"],
                   100 * r["ls_ann"], r["ls_nw_t"], r["boot_ci_m"][0], r["boot_ci_m"][1]))
         print("      worst months: %s" % r["worst_months"])
 
@@ -138,38 +143,49 @@ def nw_t(x, lag):
         for line in txt.splitlines():
             parts = [p.strip() for p in line.split(",")]
             if len(parts) == 2 and len(parts[0]) == 6 and parts[0].isdigit():
-                umd[parts[0]] = float(parts[1]) / 100.0
-        ours = {a[:7].replace("-", ""): v for _, a, v, *_ in
-                [(0,) + x for x in [(a, l) for f, a, l, *_ in ls_rows if f == "mom_12_1"]]}
+                try:
+                    umd[parts[0]] = float(parts[1]) / 100.0
+                except ValueError:
+                    pass
+        ours = {a[:7].replace("-", ""): l for f, a, l, t, b, nn in ls_rows if f == "mom_12_1"}
         common = sorted(set(umd) & set(ours))
-        a1 = np.array([ours[k] for k in common])
-        a2 = np.array([umd[k] for k in common])
-        umd_corr = float(np.corrcoef(a1, a2)[0, 1])
-        print("  overlap months=%d corr=%.3f (gate >= 0.60)" % (len(common), umd_corr))
+        if len(common) >= 24:
+            a1 = np.array([ours[k] for k in common])
+            a2 = np.array([umd[k] for k in common])
+            umd_corr = float(np.corrcoef(a1, a2)[0, 1])
+            print("  overlap months=%d corr=%.3f (gate >= 0.60)" % (len(common), umd_corr))
+        else:
+            print("  insufficient overlap (%d months)" % len(common))
     except Exception as e:
         print("  UMD fetch failed: %s (gate falls to sign+crash checks)" % str(e)[:80])
 
     print("\n" + "=" * 12, "REPLICATION GATE (pre-registered)", "=" * 12)
     checks = []
+
     def chk(name, ok, note):
         checks.append(ok)
-        print("  [%s] %s — %s" % ("PASS" if ok else "FAIL", name, note))
+        print("  [%s] %s - %s" % ("PASS" if ok else "FAIL", name, note))
+
     r = results
-    chk("value sign (ebit_ev LS > 0)", r["ebit_ev"]["ls_ann"] > 0,
-        "ann=%+.2f%% (value-winter sample; sign is the gate)" % (100 * r["ebit_ev"]["ls_ann"]))
-    chk("profitability (gp_a LS > 0)", r["gp_a"]["ls_ann"] > 0,
-        "ann=%+.2f%% t=%+.2f" % (100 * r["gp_a"]["ls_ann"], r["gp_a"]["ls_nw_t"]))
-    chk("accruals (prior-aligned > 0)", -r["accruals"]["ls_ann"] > 0,
-        "low-minus-high ann=%+.2f%%" % (-100 * r["accruals"]["ls_ann"]))
-    chk("asset growth (prior-aligned > 0)", -r["asset_growth"]["ls_ann"] > 0,
-        "low-minus-high ann=%+.2f%% (post-publication attenuation expected)"
-        % (-100 * r["asset_growth"]["ls_ann"]))
-    chk("momentum (LS > 0)", r["mom_12_1"]["ls_ann"] > 0,
-        "ann=%+.2f%% t=%+.2f" % (100 * r["mom_12_1"]["ls_ann"], r["mom_12_1"]["ls_nw_t"]))
+    if len(r) < 5:
+        print("  MISSING FACTORS: %s" % sorted(set(
+            ("ebit_ev", "gp_a", "accruals", "asset_growth", "mom_12_1")) - set(r)))
+    chk("value sign (ebit_ev LS > 0)", r.get("ebit_ev", {}).get("ls_ann", -1) > 0,
+        "ann=%+.2f%%" % (100 * r.get("ebit_ev", {}).get("ls_ann", 0)))
+    chk("profitability (gp_a LS > 0)", r.get("gp_a", {}).get("ls_ann", -1) > 0,
+        "ann=%+.2f%% t=%+.2f" % (100 * r.get("gp_a", {}).get("ls_ann", 0),
+                                 r.get("gp_a", {}).get("ls_nw_t", 0)))
+    chk("accruals (prior-aligned > 0)", -r.get("accruals", {}).get("ls_ann", 1) > 0,
+        "low-minus-high ann=%+.2f%%" % (-100 * r.get("accruals", {}).get("ls_ann", 0)))
+    chk("asset growth (prior-aligned > 0)", -r.get("asset_growth", {}).get("ls_ann", 1) > 0,
+        "low-minus-high ann=%+.2f%%" % (-100 * r.get("asset_growth", {}).get("ls_ann", 0)))
+    chk("momentum (LS > 0)", r.get("mom_12_1", {}).get("ls_ann", -1) > 0,
+        "ann=%+.2f%% t=%+.2f" % (100 * r.get("mom_12_1", {}).get("ls_ann", 0),
+                                 r.get("mom_12_1", {}).get("ls_nw_t", 0)))
     if umd_corr is not None:
         chk("UMD corr >= 0.60", umd_corr >= 0.60, "corr=%.3f" % umd_corr)
     print("\nREPLICATION GATE: %s (%d/%d)" % (
-        "PASS" if all(checks) else "REVIEW", sum(checks), len(checks)))
+        "PASS" if checks and all(checks) else "REVIEW", sum(checks), len(checks)))
     (Path(__file__).resolve().parent.parent / "artifacts/phase1_eval.json").write_text(
         json.dumps({"results": results, "umd_corr": umd_corr}, indent=1))
     cx.close()
