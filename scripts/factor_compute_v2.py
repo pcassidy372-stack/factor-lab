@@ -110,6 +110,11 @@ def main():
                 cand = [x for x in ev if x[0] <= asof and dur(x[0], asof) <= 140]
                 if cand:
                     raw["sue"][sec] = cand[-1][1]
+            if ai >= 1:
+                g1 = TR.get(sec, {})
+                t0, ta = g1.get(asofs[ai - 1]), g1.get(asof)
+                if t0 and ta:
+                    raw["trk_core_1m"][sec] = ta / t0 - 1.0
             if ai >= 12:
                 grid = TR.get(sec, {})
                 t0, t1 = grid.get(asofs[ai - 12]), grid.get(asofs[ai - 1])
