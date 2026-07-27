@@ -43,3 +43,13 @@ predicted value cluster {ebit_ev, bp} did NOT form (.23). Max pairwise
 Momentum: the platform's one marginal premium. SUE: the platform's most
 consistent rank signal. Low-vol: alive in ranks (IC t about -2.0), absent
 in premiums. Everything else: honest noise this window.
+
+---
+## v1.1 addendum (2026-07-27, post-controls)
+Session-14 controls (pit selector, 16:00 cutoff, bounded fallback,
+completed months, tie-safe ranks) moved the registered FM table by at most
+0.4bp/mo: F1-F4 stand unchanged and are hereby marked CONTROLS-ROBUST.
+Registered run stored as fm_coefficients run_id='fm-controls'; v1 preserved
+as 'fm-multi'. LS-level shifts (mom +8.73%, sue +2.43% t=1.74) are
+mechanical consequences of the named controls, documented in
+code_review_adjudication.md.
