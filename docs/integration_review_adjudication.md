@@ -26,3 +26,12 @@ FL-side, actioned this session:
 Declined with reasons: append-only factor_values (immutability lives at
 consumption in tracker_factor_snapshots; production stays deterministic
 rebuild + git), schema namespace (separate DBs chosen).
+
+
+## Completion note (same day)
+First close-out commit overstated three items, corrected here: the monthly
+chain call initially committed as dead code (verified and made live before
+the gate step); migration 013 had not been applied (now applied); the
+sector snapshot INSERT failed on the raw NOT NULL column (fixed, accrual
+genuinely started). Lesson repeated: claims of 'done' require the same
+side-effect evidence as claims of 'result' (R20 applies to housekeeping).
