@@ -270,3 +270,14 @@ CREATE TABLE benchmarks_m (
     PRIMARY KEY (asof, symbol)
 );
 """
+
+MIGRATIONS[11] = """
+CREATE TABLE fm_coefficients (
+    run_id    TEXT NOT NULL,
+    asof      DATE NOT NULL,
+    factor_id TEXT NOT NULL,
+    beta      NUMERIC,
+    n         INT,
+    PRIMARY KEY (run_id, asof, factor_id)
+);
+"""
