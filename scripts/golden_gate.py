@@ -149,6 +149,22 @@ def main():
     check("T9", (fa == 0) or (fa == ua and ff == nreg),
           "factor asofs=%d/%d factors=%d/%d (0/0 legal pre-Phase-1)" % (fa, ua, ff, nreg))
 
+    print("T10 synthetic restatement (production selector)")
+    from factorlab.pit import visible_at
+    rows = [("2016-03-31", 1, "2016-05-01 09:00:00", None, None, None, 100.0,
+             None, None, None, None, None, None, None),
+            ("2016-03-31", 2, "2025-05-01 09:00:00", None, None, None, 999.0,
+             None, None, None, None, None, None, None)]
+    v18 = visible_at(rows, "2018-06-30")
+    v26 = visible_at(rows, "2026-06-30")
+    aft = [("2016-03-31", 1, "2016-06-30 17:30:00", None, None, None, 100.0,
+            None, None, None, None, None, None, None)]
+    ok10 = (len(v18) == 1 and v18[0][1] == 1 and v18[0][6] == 100.0
+            and len(v26) == 1 and v26[0][1] == 2 and v26[0][6] == 999.0
+            and visible_at(aft, "2016-06-30") == []
+            and len(visible_at(aft, "2016-07-29")) == 1)
+    check("T10", ok10, "orig-then-restate + after-close cutoff via factorlab.pit")
+
     print("\nGOLDEN GATE: %s (%d/%d)" % ("PASS" if all(RESULTS) else "FAIL",
                                           sum(RESULTS), len(RESULTS)))
     cx.close()

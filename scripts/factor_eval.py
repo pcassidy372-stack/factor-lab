@@ -37,6 +37,10 @@ def main():
     cur = cx.cursor()
     cur.execute("SELECT DISTINCT asof FROM universe_snapshots ORDER BY asof")
     asofs = [str(r[0]) for r in cur.fetchall()]
+    from datetime import date as _date
+    cm = _date.today().isoformat()[:7]
+    if asofs and asofs[-1][:7] == cm:
+        asofs = asofs[:-1]                    # review P0-1: incomplete current month excluded
     nxt = {a: asofs[i + 1] for i, a in enumerate(asofs[:-1])}
     cur.execute("SELECT security_id, d, tr FROM tr_index_d WHERE d = ANY(%s::date[])", (asofs,))
     TR = defaultdict(dict)
@@ -61,8 +65,8 @@ def main():
         if t1:
             return t1 / t0 - 1.0
         ld = LAST.get(sec)
-        if not ld or ld <= a:
-            return None
+        if not ld or ld <= a or ld > b:
+            return None                       # review P0-2: series must END inside the window
         r = TRLAST[sec] / t0 - 1.0
         d = DL.get(sec)
         if d and a < d[0] <= b and d[1] is not None and d[2] == "rung1-deal-manual":

@@ -4,6 +4,7 @@ factors (canonical five + 1b five), eligibility from registry params
 sector-demean -> sector+size neutralize. Deterministic full rebuild."""
 import json
 import statistics
+from scipy.stats import rankdata
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -39,18 +40,8 @@ def main():
                    FROM profile_snapshots ORDER BY security_id, asof DESC""")
     sector = {sec: (s or "Unknown") for sec, s in cur.fetchall()}
     fin = {sec for sec, s in sector.items() if "financ" in s.lower()}
-    cur.execute("""SELECT security_id, fiscal_period_end, vintage_id, accepted_date::date,
-                   revenue, gross_profit, ebit, net_income, cfo, total_assets,
-                   total_debt, cash, equity, shares_dil
-                   FROM fundamentals_q WHERE timing_pit""")
-    F = defaultdict(dict)
-    for row in cur.fetchall():
-        sec, pe, v = row[0], str(row[1]), row[2]
-        curr = F[sec].get(pe)
-        if curr is None or v > curr[0]:
-            F[sec][pe] = (v, str(row[3])) + tuple(None if x is None else float(x) for x in row[4:])
-    for sec in F:
-        F[sec] = sorted(((pe,) + rec for pe, rec in F[sec].items()))
+    from factorlab.pit import load_fundamentals
+    F = load_fundamentals(cur)
     cur.execute("SELECT security_id, d, tr FROM tr_index_d WHERE d = ANY(%s::date[])", (asofs,))
     TR = defaultdict(dict)
     for sec, d, tr in cur.fetchall():
@@ -72,12 +63,12 @@ def main():
 
     cur2 = cx.cursor()
     for t in ("factor_values", "factor_ic", "factor_ls"):
-        cur2.execute("DELETE FROM %s" % t)
-    cx.commit()
+        cur2.execute("DELETE FROM %s" % t)     # review P0-5: single txn; commit only at end
+
+    from factorlab.pit import visible_at
 
     def visible(sec, asof):
-        rows = [r for r in F.get(sec, []) if r[2] <= asof]
-        return rows[-6:]
+        return visible_at(F.get(sec, ()), asof)[-6:]
 
     out = []
     for ai, asof in enumerate(asofs):
@@ -89,7 +80,7 @@ def main():
             rows = visible(sec, asof)
             if rows:
                 pe = rows[-1][0]
-                _, _, _, rev, gp, ebit, ni, cfo, ta, td, cash, eq, sh = rows[-1]
+                _, _, _, rev, gp, ebit, ni, cfo, cpx, ta, td, cash, eq, sh = rows[-1]
                 last4 = rows[-4:]
                 ok_ttm = len(last4) == 4 and 240 <= dur(last4[0][0], last4[3][0]) <= 390
                 prior = [r for r in rows if 300 <= dur(r[0], pe) <= 430]
@@ -97,20 +88,21 @@ def main():
                     s4 = lambda i: (sum(r[i] for r in last4 if r[i] is not None)
                                     if all(r[i] is not None for r in last4) else None)
                     ebit_t, gp_t, ni_t, cfo_t = s4(5), s4(4), s4(6), s4(7)
+                    # index map unchanged: pit rec = (pe,v,acc, rev,gp,ebit,ni,cfo,capex,ta,td,cash,eq,sh)
                     if ebit_t is not None and ta and td is not None and cash is not None:
                         ev = mc + td - cash
                         if ev > max(1e8, 0.05 * mc):
                             raw["ebit_ev"][sec] = ebit_t / ev
                     if gp_t is not None and ta:
                         raw["gp_a"][sec] = gp_t / ta
-                    ta_prior = prior[-1][8] if prior and prior[-1][8] else None
+                    ta_prior = prior[-1][9] if prior and prior[-1][9] else None
                     if ni_t is not None and cfo_t is not None and ta:
                         raw["accruals"][sec] = (ni_t - cfo_t) / ((ta + ta_prior) / 2 if ta_prior else ta)
                     if ta and ta_prior:
                         raw["asset_growth"][sec] = ta / ta_prior - 1.0
                 if eq and eq > 0:
                     raw["bp"][sec] = eq / mc
-                sh_prior = prior[-1][12] if prior and prior[-1][12] else None
+                sh_prior = prior[-1][13] if prior and prior[-1][13] else None
                 if sh and sh_prior and sh_prior > 0:
                     raw["net_issuance"][sec] = sh / sh_prior - 1.0
             ev = SUE.get(sec)
@@ -148,8 +140,8 @@ def main():
             v = np.array([vals[s] for s in secs], float)
             lo, hi = np.percentile(v, [1, 99])
             v = np.clip(v, lo, hi)
-            order = v.argsort().argsort()
-            rn = np.array([ND.inv_cdf((r + 0.5) / len(v)) for r in order])
+            rk = rankdata(v, method="average")            # review: tie-safe ranks
+            rn = np.array([ND.inv_cdf(r / (len(v) + 1)) for r in rk])
             sects = np.array([sector.get(s, "Unknown") for s in secs])
             zs = rn.copy()
             for sg in set(sects):
@@ -174,7 +166,6 @@ def main():
             execute_values(cur2, """INSERT INTO factor_values
                 (asof, security_id, factor_id, raw, rank_norm, z_sector, z_sector_size)
                 VALUES %s""", out, page_size=10000)
-            cx.commit()
             out = []
     if out:
         execute_values(cur2, """INSERT INTO factor_values
