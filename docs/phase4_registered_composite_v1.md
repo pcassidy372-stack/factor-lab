@@ -43,3 +43,8 @@ expectation sits between holdout (~0) and registered (+7.6%), shrunk
 toward zero by selection effects. The incrementals extend true OOS by one
 month, every month, from here - the composite is now a LIVE PAPER TRACK,
 and the next 12-24 months of untouched data are the real trial.
+
+Crash-class check (reading rule #2): PASS - worst holdout month -8.1%
+(2023-11), within the priced class; 2026-06 not in the worst five. OOS
+failure mode was chronic flatness, not acute crash - the tail protection
+worked; the average month didn't.
