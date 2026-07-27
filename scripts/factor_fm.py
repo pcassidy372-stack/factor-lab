@@ -5,6 +5,7 @@ NW(3) t. Univariate FM per factor for standalone comparison. Redundancy:
 avg monthly cross-sectional Spearman |rho| -> hierarchical clusters.
 Windows: dev+val (asof <= 2023-07-31, REGISTERED) and full (appendix).
 Stores monthly betas in fm_coefficients (R20)."""
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -16,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from factorlab.db import conn
 
 DEVVAL_END = "2023-07-31"
+RUN_ID = os.environ.get("FM_RUN_ID", "fm-multi")
 
 
 def nw_t(x, lag=3):
@@ -93,15 +95,16 @@ def main():
         beta, *_ = np.linalg.lstsq(X, y, rcond=None)
         for k, f in enumerate(FIDS):
             multi[f][a] = beta[k + 1]
-            rows_out.append(("fm-multi", a, f, float(beta[k + 1]), len(y)))
+            rows_out.append((RUN_ID, a, f, float(beta[k + 1]), len(y)))
         rk = np.argsort(np.argsort(y))
         for k, f in enumerate(FIDS):
             zf = Zs[:, k]
             uni[f][a] = float(np.corrcoef(np.argsort(np.argsort(zf)), rk)[0, 1])
         R = np.corrcoef(Zs.T)
         corr_acc[a] = R
-    execute_values(cur, "INSERT INTO fm_coefficients (run_id, asof, factor_id, beta, n) VALUES %s"
-                   " ON CONFLICT DO NOTHING", rows_out, page_size=5000)
+    cur.execute("DELETE FROM fm_coefficients WHERE run_id = %s", (RUN_ID,))
+    execute_values(cur, "INSERT INTO fm_coefficients (run_id, asof, factor_id, beta, n) VALUES %s",
+                   rows_out, page_size=5000)
     cx.commit()
 
     def table(name, window):
