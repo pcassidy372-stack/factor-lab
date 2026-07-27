@@ -281,3 +281,13 @@ CREATE TABLE fm_coefficients (
     PRIMARY KEY (run_id, asof, factor_id)
 );
 """
+
+MIGRATIONS[12] = """
+CREATE TABLE composites_ls (
+    composite_id TEXT NOT NULL,
+    asof         DATE NOT NULL,
+    ls_ret       NUMERIC,
+    n            INT,
+    PRIMARY KEY (composite_id, asof)
+);
+"""
