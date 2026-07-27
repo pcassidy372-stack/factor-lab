@@ -279,6 +279,18 @@ def job_weekly(db):
     return detail
 
 
+def run_factor_chain():
+    """Review #3 7.3: after universe refresh, recompute the full derived
+    stack and gate it. Any nonzero rc fails the monthly job loudly."""
+    import subprocess
+    import sys as _sys
+    for script in ("scripts/factor_compute_v2.py", "scripts/factor_eval.py",
+                   "scripts/golden_gate.py"):
+        rc = subprocess.call([_sys.executable, "-u", script])
+        if rc != 0:
+            raise RuntimeError("factor chain failed at %s (rc=%d)" % (script, rc))
+
+
 def job_monthly(db):
     detail = {}
     c = FMPClient(min_interval=0.12)
@@ -317,7 +329,7 @@ def job_monthly(db):
     detail["golden_gate"] = "PASS" if r.returncode == 0 else "FAIL"
     detail["gate_tail"] = (r.stdout.strip().splitlines() or ["?"])[-1]
     return detail
-
+    run_factor_chain()
 
 def main():
     force = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "--force" else None

@@ -56,22 +56,8 @@ def main():
     cur.execute("SELECT factor_id, prior_sign FROM factor_definitions")
     SIGN = dict(cur.fetchall())
 
-    def fwd(sec, a):
-        b = nxt.get(a)
-        t0 = TR.get(sec, {}).get(a)
-        if not b or not t0:
-            return None
-        t1 = TR.get(sec, {}).get(b)
-        if t1:
-            return t1 / t0 - 1.0
-        ld = LAST.get(sec)
-        if not ld or ld <= a or ld > b:
-            return None                       # review P0-2: series must END inside the window
-        r = TRLAST[sec] / t0 - 1.0
-        d = DL.get(sec)
-        if d and a < d[0] <= b and d[1] is not None and d[2] == "rung1-deal-manual":
-            r = (1 + r) * (1 + float(d[1])) - 1
-        return r
+    from factorlab.returns import make_fwd
+    fwd = make_fwd(TR, LAST, TRLAST, DL, nxt)
 
     cur.execute("SELECT asof, security_id, factor_id, z_sector_size FROM factor_values")
     FV = defaultdict(lambda: defaultdict(dict))
