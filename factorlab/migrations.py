@@ -291,3 +291,11 @@ CREATE TABLE composites_ls (
     PRIMARY KEY (composite_id, asof)
 );
 """
+
+
+MIGRATIONS[13] = """
+ALTER TABLE estimates_snapshots ADD COLUMN period_type TEXT NOT NULL DEFAULT 'annual';
+ALTER TABLE estimates_snapshots ADD COLUMN eps_high NUMERIC;
+ALTER TABLE estimates_snapshots ADD COLUMN eps_low NUMERIC;
+ALTER TABLE estimates_snapshots ADD COLUMN source_observed_at TIMESTAMPTZ DEFAULT now();
+"""

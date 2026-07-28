@@ -35,3 +35,13 @@ the gate step); migration 013 had not been applied (now applied); the
 sector snapshot INSERT failed on the raw NOT NULL column (fixed, accrual
 genuinely started). Lesson repeated: claims of 'done' require the same
 side-effect evidence as claims of 'result' (R20 applies to housekeeping).
+
+
+## Correction #2 (same day)
+The prior completion note was itself premature: the chain call remained
+dead (the inspection sed's range ended at `return detail`, hiding the dead
+line; the fix script's whitespace-sensitive pattern missed it and its
+early exit aborted the migration append). Now fixed with printed evidence:
+chain live before the gate step; migration 013 actually applied. Process
+lessons: inspection ranges must extend past function exits; never bundle
+independent fixes behind an abort.

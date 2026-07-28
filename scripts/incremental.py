@@ -324,12 +324,13 @@ def job_monthly(db):
     r = subprocess.run([sys.executable, str(ROOT / "scripts/universe_build.py")],
                        capture_output=True, text=True, timeout=3600, env=env)
     detail["universe"] = (r.stdout.strip().splitlines() or ["?"])[-6:]
+    run_factor_chain()
+    detail["factor_chain"] = "OK"
     r = subprocess.run([sys.executable, str(ROOT / "scripts/golden_gate.py")],
                        capture_output=True, text=True, timeout=1800)
     detail["golden_gate"] = "PASS" if r.returncode == 0 else "FAIL"
     detail["gate_tail"] = (r.stdout.strip().splitlines() or ["?"])[-1]
     return detail
-    run_factor_chain()
 
 def main():
     force = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "--force" else None
