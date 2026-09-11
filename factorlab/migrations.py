@@ -299,3 +299,7 @@ ALTER TABLE estimates_snapshots ADD COLUMN eps_high NUMERIC;
 ALTER TABLE estimates_snapshots ADD COLUMN eps_low NUMERIC;
 ALTER TABLE estimates_snapshots ADD COLUMN source_observed_at TIMESTAMPTZ DEFAULT now();
 """
+
+# Additive, opt-in publication storage. Legacy datasets are not replaced or copied.
+from factorlab.publication_schema import PUBLICATION_SQL
+MIGRATIONS[14] = PUBLICATION_SQL
