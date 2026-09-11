@@ -4,15 +4,14 @@ claims its period_key in job_log (idempotent), does its work, records detail.
 daily   (weekdays >= 23:00 UTC): dividend/split calendars -> corp_actions;
         per-active-security price append; TR extension (R16-class jumps are
         flagged to job_log, never auto-repaired without an oracle).
-weekly  (Sat >= 12:00 UTC): strict-PIT statement sweep — new periods and
-        live-caught restatements land as NEW VINTAGES with value_pit=true;
-        estimates snapshot.
+weekly  (Sat >= 12:00 UTC): statement observations append NEW VINTAGES;
+        estimates snapshot. Historical value availability remains uncertified.
 monthly (day >= 2, >= 13:00 UTC): mktcap top-up, universe rebuild
         (deterministic), golden gate run, result logged.
 Force locally: python scripts/incremental.py --force daily|weekly|monthly
 """
+import argparse
 import json
-import subprocess
 import sys
 import threading
 from collections import defaultdict
@@ -25,6 +24,9 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from factorlab.fmp_client import FMPClient
 from factorlab.ingest import RDB
+from factorlab.job_health import (JobFailure, checked_script, due_jobs,
+                                  execute_job, require_complete, safe_error)
+from factorlab.weekly_fundamentals import ingest_security
 
 ROOT = Path(__file__).resolve().parent.parent
 NOW = datetime.now(timezone.utc)
@@ -69,7 +71,8 @@ def job_daily(db):
             rows = FMPClient(min_interval=0.1).get(logical, date_from=f, date_to=TODAY,
                                                    allow_empty=True)
         except Exception as e:
-            detail[logical] = "ERR %s" % str(e)[:60]
+            detail[logical] = safe_error(e)
+            detail["source_errors"] = detail.get("source_errors", 0) + 1
             rows = []
         for r in rows:
             sec = sym2sec.get(r.get("symbol"))
@@ -85,6 +88,7 @@ def job_daily(db):
                 amt = r.get("dividend") or r.get("adjDividend")
                 if amt:
                     acts.append((sec, d, "div_cash", None, float(amt), "calendar"))
+    require_complete("daily", detail)
     if acts:
         db.safe(lambda cur: execute_values(cur, """INSERT INTO corp_actions
             (security_id, ex_date, action_type, ratio, amount, source) VALUES %s
@@ -155,8 +159,9 @@ def job_daily(db):
             tag = "error"
             try:
                 tag = one(wc, wdb, sec, sym, last_d)
-            except Exception:
-                pass
+            except Exception as exc:
+                with lock:
+                    counts["error_" + safe_error(exc)["error_type"]] += 1
             with lock:
                 counts[tag] += 1
         wdb.close()
@@ -168,127 +173,58 @@ def job_daily(db):
 
 
 def job_weekly(db):
-    import hashlib
     detail = {}
-    c_kw = dict(min_interval=0.12)
     members = db.safe(lambda cur: (cur.execute("""
         SELECT DISTINCT sm.security_id, sm.symbol, i.cik FROM symbol_map sm
         JOIN securities s USING (security_id) JOIN issuers i USING (issuer_id)
         WHERE sm.valid_to IS NULL AND s.status='active'
           AND sm.security_id IN (SELECT DISTINCT security_id FROM universe_snapshots
                                  WHERE in_universe)"""), cur.fetchall())[1])
+    if not members:
+        raise JobFailure("empty_weekly_scope", {"statements": {}})
     counts = defaultdict(int)
     lock = threading.Lock()
 
-    def g(row, *keys):
-        for k in keys:
-            if row.get(k) is not None:
-                return row[k]
-        return None
-
-    def one(c, wdb, sec, sym, cik):
-        cik = str(cik or "").lstrip("0")
-        stmts = {}
-        for logical in ("income_q", "balance_q", "cashflow_q"):
-            rows = c.get(logical, symbol=sym, limit=2, allow_empty=True)
-            for r in rows:
-                d = r.get("date")
-                rcik = str(r.get("cik") or "").lstrip("0")
-                if not d or (cik and rcik and rcik != cik):
-                    continue
-                stmts.setdefault(d, {})[logical] = r
-        n_new = n_restate = 0
-        for d, by in stmts.items():
-            ir = by.get("income_q", {})
-            br, cr = by.get("balance_q", {}), by.get("cashflow_q", {})
-            if not ir:
-                continue
-            curated = {
-                "revenue": g(ir, "revenue"), "gross_profit": g(ir, "grossProfit"),
-                "ebit": g(ir, "operatingIncome"), "net_income": g(ir, "netIncome"),
-                "cfo": g(cr, "operatingCashFlow", "netCashProvidedByOperatingActivities"),
-                "capex": g(cr, "capitalExpenditure"), "total_assets": g(br, "totalAssets"),
-                "total_debt": g(br, "totalDebt"),
-                "cash": g(br, "cashAndShortTermInvestments", "cashAndCashEquivalents"),
-                "equity": g(br, "totalStockholdersEquity", "totalEquity"),
-                "shares_dil": g(ir, "weightedAverageShsOutDil", "weightedAverageShsOut"),
-            }
-            h = hashlib.sha256(json.dumps(curated, sort_keys=True, default=str)
-                               .encode()).hexdigest()[:16]
-
-            def unit(cur):
-                nonlocal n_new, n_restate
-                cur.execute("""SELECT max(vintage_id),
-                               (array_agg(source_hash ORDER BY vintage_id DESC))[1]
-                               FROM fundamentals_q WHERE security_id=%s
-                               AND fiscal_period_end=%s""", (sec, d))
-                mv, last_h = cur.fetchone()
-                if mv is not None and last_h == h:
-                    return
-                accepted = ir.get("acceptedDate")
-                lag_ok = accepted and (date.fromisoformat(accepted[:10]) -
-                                       date.fromisoformat(d)).days > 10
-                lag = None if not accepted else (date.fromisoformat(accepted[:10]) -
-                                                 date.fromisoformat(d)).days
-                lc = ("missing" if not lag_ok else
-                      "release" if lag <= 25 else "filing" if lag <= 200 else "delinquent")
-                cur.execute("""INSERT INTO fundamentals_q (security_id, fiscal_period_end,
-                    period, vintage_id, accepted_date, filing_date, backfill, value_pit,
-                    timing_pit, lag_class, source_hash, mapping_version, currency,
-                    revenue, gross_profit, ebit, net_income, cfo, capex, total_assets,
-                    total_debt, cash, equity, shares_dil, raw)
-                    VALUES (%s,%s,%s,%s,%s,%s,false,true,%s,%s,%s,'m1',%s,
-                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT DO NOTHING""",
-                    (sec, d, ir.get("period") or "Q?", (mv or 0) + 1, accepted,
-                     ir.get("filingDate"), bool(lag_ok), lc,
-                     ir.get("reportedCurrency"), curated["revenue"],
-                     curated["gross_profit"], curated["ebit"], curated["net_income"],
-                     curated["cfo"], curated["capex"], curated["total_assets"],
-                     curated["total_debt"], curated["cash"], curated["equity"],
-                     curated["shares_dil"],
-                     json.dumps({"income": ir, "balance": br, "cashflow": cr}, default=str)))
-                if mv is None:
-                    n_new += 1
-                else:
-                    n_restate += 1
-            wdb.safe(unit)
-        return n_new, n_restate
-
     def work(batch):
-        wc = FMPClient(**c_kw)
+        wc = FMPClient(min_interval=0.12)
         wdb = RDB()
-        for sec, sym, cik in batch:
-            try:
-                a, b = one(wc, wdb, sec, sym, cik)
-                with lock:
-                    counts["new_vintages"] += a
-                    counts["live_restatements"] += b
-                    counts["ok"] += 1
-            except Exception:
-                with lock:
-                    counts["error"] += 1
-        wdb.close()
+        try:
+            for sec, sym, cik in batch:
+                try:
+                    outcomes = ingest_security(wc, wdb, sec, sym, cik)
+                    with lock:
+                        for key, value in outcomes.items():
+                            counts[key] += value
+                        counts["ok"] += 1
+                except Exception as exc:
+                    error = safe_error(exc)
+                    with lock:
+                        counts["error"] += 1
+                        counts["error_" + error["error_type"]] += 1
+                        if "sqlstate" in error:
+                            counts["sqlstate_" + error["sqlstate"]] += 1
+        finally:
+            wdb.close()
 
     with ThreadPoolExecutor(max_workers=6) as ex:
         list(ex.map(work, [members[i::6] for i in range(6)]))
     detail["statements"] = dict(counts)
-    r = subprocess.run([sys.executable, str(ROOT / "scripts/estimates_snapshot.py")],
-                       capture_output=True, text=True, timeout=3600)
-    detail["estimates"] = (r.stdout.strip().splitlines() or ["?"])[-1]
+    # Estimates can accrue independently, but a statement error still fails the job.
+    try:
+        checked_script(ROOT, "scripts/estimates_snapshot.py", 3600)
+    except JobFailure as exc:
+        raise JobFailure(exc.code, dict(detail, **exc.detail)) from exc
+    detail["estimates"] = "completed"
+    require_complete("weekly", detail)
     return detail
 
 
 def run_factor_chain():
-    """Review #3 7.3: after universe refresh, recompute the full derived
-    stack and gate it. Any nonzero rc fails the monthly job loudly."""
-    import subprocess
-    import sys as _sys
+    """Legacy full rebuild, NOT a versioned publisher; release remains draft."""
     for script in ("scripts/factor_compute_v2.py", "scripts/factor_eval.py",
                    "scripts/golden_gate.py"):
-        rc = subprocess.call([_sys.executable, "-u", script])
-        if rc != 0:
-            raise RuntimeError("factor chain failed at %s (rc=%d)" % (script, rc))
+        checked_script(ROOT, script, 7200)
+        print(json.dumps({"stage": script, "returncode": 0}), flush=True)
 
 
 def job_monthly(db):
@@ -303,7 +239,9 @@ def job_monthly(db):
         try:
             data = c.get("mktcap_hist", symbol=sym, limit=60, date_from=f, date_to=TODAY,
                          allow_empty=True)
-        except Exception:
+        except Exception as exc:
+            detail["source_errors"] = detail.get("source_errors", 0) + 1
+            detail["last_source_error"] = safe_error(exc)
             continue
         monthly = {}
         for r in data:
@@ -314,6 +252,9 @@ def job_monthly(db):
                     monthly[ym] = (d, float(v))
         rows.extend((d, sec, v) for d, v in monthly.values())
     rows = list({(d, sec): (d, sec, v) for d, sec, v in rows}.values())
+    require_complete("monthly", detail)
+    if not targets or not rows:
+        raise JobFailure("empty_monthly_scope", detail)
     if rows:
         db.safe(lambda cur: execute_values(cur, """INSERT INTO mktcap_m
             (asof, security_id, mktcap) VALUES %s
@@ -321,46 +262,39 @@ def job_monthly(db):
             rows, page_size=2000))
     detail["mktcap_cells"] = len(rows)
     env = dict(**__import__("os").environ, SKIP_MKTCAP="1")
-    r = subprocess.run([sys.executable, str(ROOT / "scripts/universe_build.py")],
-                       capture_output=True, text=True, timeout=3600, env=env)
-    detail["universe"] = (r.stdout.strip().splitlines() or ["?"])[-6:]
-    run_factor_chain()
+    try:
+        checked_script(ROOT, "scripts/universe_build.py", 3600, env=env)
+        detail["universe"] = "completed"
+        run_factor_chain()
+    except JobFailure as exc:
+        raise JobFailure(exc.code, dict(detail, **exc.detail)) from exc
     detail["factor_chain"] = "OK"
-    r = subprocess.run([sys.executable, str(ROOT / "scripts/golden_gate.py")],
-                       capture_output=True, text=True, timeout=1800)
-    detail["golden_gate"] = "PASS" if r.returncode == 0 else "FAIL"
-    detail["gate_tail"] = (r.stdout.strip().splitlines() or ["?"])[-1]
+    detail["golden_gate"] = "PASS"  # The checked chain already ran the gate.
     return detail
 
-def main():
-    force = sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "--force" else None
-    db = RDB()
-    due = []
-    wd, hr = NOW.weekday(), NOW.hour
-    if force == "daily" or (wd < 5 and hr >= 23):
-        due.append(("daily", TODAY, job_daily))
-    if force == "weekly" or (wd == 5 and hr >= 12):
-        due.append(("weekly", NOW.strftime("%G-W%V"), job_weekly))
-    if force == "monthly" or (NOW.day >= 2 and hr >= 13):
-        due.append(("monthly", NOW.strftime("%Y-%m"), job_monthly))
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--force", choices=("daily", "weekly", "monthly"))
+    args = parser.parse_args(argv)
+    due = due_jobs(NOW, args.force)
     if not due:
         print("nothing due (utc=%s)" % NOW.isoformat())
+        return 0
+    db = RDB()
+    jobs = {"daily": job_daily, "weekly": job_weekly, "monthly": job_monthly}
+    failed = False
+    try:
+        for job, key in due:
+            if not execute_job(db, job, key, jobs[job], claim=claim, finish=finish):
+                failed = True
+    except Exception as exc:
+        print(json.dumps(dict(level="error", **safe_error(exc))), flush=True)
+        failed = True
+    finally:
         db.close()
-        return
-    for job, key, fn in due:
-        if not claim(db, job, key):
-            print("%s %s already claimed" % (job, key))
-            continue
-        print("running %s %s" % (job, key))
-        try:
-            detail = fn(db)
-            finish(db, job, key, "ok", detail)
-            print("  %s ok: %s" % (job, json.dumps(detail, default=str)[:400]))
-        except Exception as e:
-            finish(db, job, key, "error", {"err": str(e)[:300]})
-            print("  %s ERROR %s" % (job, e))
-    db.close()
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
