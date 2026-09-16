@@ -102,16 +102,17 @@ def test_empty_weekly_scope_fails(scheduler):
         scheduler.job_weekly(ScopeDB())
 
 
-def test_factor_chain_stops_at_first_failed_child(scheduler, monkeypatch):
+def test_monthly_uses_new_coordinator_not_legacy_rebuild(scheduler, monkeypatch):
     calls = []
-    def run(root, script, timeout):
-        calls.append(script)
-        if script == "scripts/factor_eval.py":
-            raise JobFailure("child_failed")
-    monkeypatch.setattr(scheduler, "checked_script", run)
-    with pytest.raises(JobFailure):
-        scheduler.run_factor_chain()
-    assert calls == ["scripts/factor_compute_v2.py", "scripts/factor_eval.py"]
+    monkeypatch.setenv("FACTORLAB_CODE_SHA", "a" * 40)
+    def run(connect, period, revision, **kwargs):
+        calls.append((period, revision, kwargs))
+        return {"status": "published"}
+    monkeypatch.setattr(scheduler, "run_monthly_period", run)
+    assert scheduler.job_monthly(ScopeDB(), "2026-09") == {"status": "published"}
+    assert calls[0][:2] == ("2026-09", "a" * 40)
+    assert "run_factor_chain" not in vars(scheduler)
+    assert "universe_build.py" not in Path(scheduler.__file__).read_text()
 
 
 def test_daily_calendar_failure_stops_before_writes(scheduler, monkeypatch):
@@ -127,3 +128,24 @@ def test_daily_calendar_failure_stops_before_writes(scheduler, monkeypatch):
         scheduler.job_daily(NoWrites())
     assert error.value.detail["source_errors"] == 2
     assert "SECRET" not in str(error.value.detail)
+
+
+def test_monthly_main_bypasses_old_claim_without_rewriting_it(scheduler, monkeypatch, capsys):
+    db=ScopeDB()
+    monkeypatch.setattr(scheduler,'RDB',lambda:db)
+    def forbidden(*a): raise AssertionError('legacy monthly claim/finish invoked')
+    monkeypatch.setattr(scheduler,'claim',forbidden)
+    monkeypatch.setattr(scheduler,'finish',forbidden)
+    monkeypatch.setattr(scheduler,'job_monthly',lambda db,key:{'status':'published','trading_authority':False})
+    assert scheduler.main(['--force','monthly'])==0
+    assert 'published' in capsys.readouterr().out and db.closed
+
+
+def test_monthly_failure_stops_without_legacy_finish_or_false_success(scheduler, monkeypatch, capsys):
+    db=ScopeDB();monkeypatch.setattr(scheduler,'RDB',lambda:db)
+    def fail(*a): raise RuntimeError('secret-password')
+    monkeypatch.setattr(scheduler,'job_monthly',fail)
+    monkeypatch.setattr(scheduler,'finish',lambda *a:pytest.fail('legacy row must stay untouched'))
+    assert scheduler.main(['--force','monthly'])==1
+    out=capsys.readouterr().out
+    assert 'secret-password' not in out and db.closed

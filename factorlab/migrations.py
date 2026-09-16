@@ -303,3 +303,7 @@ ALTER TABLE estimates_snapshots ADD COLUMN source_observed_at TIMESTAMPTZ DEFAUL
 # Additive, opt-in publication storage. Legacy datasets are not replaced or copied.
 from factorlab.publication_schema import PUBLICATION_SQL
 MIGRATIONS[14] = PUBLICATION_SQL
+
+# Source-only registration; the scheduler never auto-applies this migration.
+from factorlab.monthly_attempt_schema import MONTHLY_ATTEMPT_SQL
+MIGRATIONS[15] = MONTHLY_ATTEMPT_SQL

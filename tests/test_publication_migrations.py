@@ -9,7 +9,18 @@ def test_old_migration_text_is_unchanged(version):
     assert hashlib.sha256(MIGRATIONS[version].encode()).hexdigest() == FROZEN[version]
 
 def test_additive_publication_migration_inventory():
-    assert sorted(MIGRATIONS) == list(range(1,15))
+    assert sorted(MIGRATIONS) == list(range(1,16))
     assert "DROP TABLE" not in MIGRATIONS[14]
     assert "DELETE FROM universe_snapshots" not in MIGRATIONS[14]
     assert "SECURITY DEFINER" not in MIGRATIONS[14]
+
+
+def test_publication_014_text_is_frozen_during_producer_integration():
+    assert hashlib.sha256(MIGRATIONS[14].encode()).hexdigest() == "a9ea061508f370d72052dd570701953f08a55f6af8b75ff185a88d9c531193d8"
+
+
+def test_monthly_attempt_migration_is_additive_and_has_no_legacy_writes():
+    assert "CREATE TABLE fl_monthly_attempts" in MIGRATIONS[15]
+    assert "CREATE TABLE fl_monthly_outcomes" in MIGRATIONS[15]
+    for forbidden in ("job_log", "DELETE FROM", "DROP TABLE", "SECURITY DEFINER"):
+        assert forbidden not in MIGRATIONS[15]

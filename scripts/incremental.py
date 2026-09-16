@@ -6,12 +6,14 @@ daily   (weekdays >= 23:00 UTC): dividend/split calendars -> corp_actions;
         flagged to job_log, never auto-repaired without an oracle).
 weekly  (Sat >= 12:00 UTC): statement observations append NEW VINTAGES;
         estimates snapshot. Historical value availability remains uncertified.
-monthly (day >= 2, >= 13:00 UTC): mktcap top-up, universe rebuild
-        (deterministic), golden gate run, result logged.
+monthly (day >= 2, >= 13:00 UTC): mktcap top-up, one frozen raw-input
+        snapshot, canonical-five computation and immutable publication.
+        Separate durable monthly attempts; legacy job_log is preserved.
 Force locally: python scripts/incremental.py --force daily|weekly|monthly
 """
 import argparse
 import json
+import os
 import sys
 import threading
 from collections import defaultdict
@@ -24,6 +26,8 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from factorlab.fmp_client import FMPClient
 from factorlab.ingest import RDB
+from factorlab.db import conn
+from factorlab.monthly_scheduler import run_monthly_period
 from factorlab.job_health import (JobFailure, checked_script, due_jobs,
                                   execute_job, require_complete, safe_error)
 from factorlab.weekly_fundamentals import ingest_security
@@ -219,15 +223,7 @@ def job_weekly(db):
     return detail
 
 
-def run_factor_chain():
-    """Legacy full rebuild, NOT a versioned publisher; release remains draft."""
-    for script in ("scripts/factor_compute_v2.py", "scripts/factor_eval.py",
-                   "scripts/golden_gate.py"):
-        checked_script(ROOT, script, 7200)
-        print(json.dumps({"stage": script, "returncode": 0}), flush=True)
-
-
-def job_monthly(db):
+def refresh_monthly_mktcap(db):
     detail = {}
     c = FMPClient(min_interval=0.12)
     f = (NOW.date() - timedelta(days=45)).isoformat()
@@ -261,16 +257,15 @@ def job_monthly(db):
             ON CONFLICT (asof, security_id) DO UPDATE SET mktcap=EXCLUDED.mktcap""",
             rows, page_size=2000))
     detail["mktcap_cells"] = len(rows)
-    env = dict(**__import__("os").environ, SKIP_MKTCAP="1")
-    try:
-        checked_script(ROOT, "scripts/universe_build.py", 3600, env=env)
-        detail["universe"] = "completed"
-        run_factor_chain()
-    except JobFailure as exc:
-        raise JobFailure(exc.code, dict(detail, **exc.detail)) from exc
-    detail["factor_chain"] = "OK"
-    detail["golden_gate"] = "PASS"  # The checked chain already ran the gate.
     return detail
+
+
+def job_monthly(db, period=None):
+    # The legacy universe/factor delete-and-rebuild scripts are no longer called.
+    # Migration 015 is required before any refresh; no auto-migration occurs.
+    return run_monthly_period(conn, period or NOW.strftime("%Y-%m"),
+        os.environ.get("FACTORLAB_CODE_SHA", ""),
+        refresh=lambda: refresh_monthly_mktcap(db))
 
 
 def main(argv=None):
@@ -286,7 +281,11 @@ def main(argv=None):
     failed = False
     try:
         for job, key in due:
-            if not execute_job(db, job, key, jobs[job], claim=claim, finish=finish):
+            if job == "monthly":
+                detail = job_monthly(db, key)
+                print(json.dumps({"job": job, "period_key": key, "detail": detail},
+                                 sort_keys=True), flush=True)
+            elif not execute_job(db, job, key, jobs[job], claim=claim, finish=finish):
                 failed = True
     except Exception as exc:
         print(json.dumps(dict(level="error", **safe_error(exc))), flush=True)
