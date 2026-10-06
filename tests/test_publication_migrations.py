@@ -9,7 +9,7 @@ def test_old_migration_text_is_unchanged(version):
     assert hashlib.sha256(MIGRATIONS[version].encode()).hexdigest() == FROZEN[version]
 
 def test_additive_publication_migration_inventory():
-    assert sorted(MIGRATIONS) == list(range(1,16))
+    assert sorted(MIGRATIONS) == list(range(1,17))
     assert "DROP TABLE" not in MIGRATIONS[14]
     assert "DELETE FROM universe_snapshots" not in MIGRATIONS[14]
     assert "SECURITY DEFINER" not in MIGRATIONS[14]

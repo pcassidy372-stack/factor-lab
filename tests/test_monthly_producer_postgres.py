@@ -12,13 +12,20 @@ from psycopg2.extras import Json, execute_values
 from test_publication_postgres import database, query
 from monthly_samples import monthly_sample
 from factorlab.monthly_producer import FrozenMonthlyInputs, FIELDS, prepare_publication, plan_universe
-from factorlab.monthly_snapshot import capture_month
-from factorlab.monthly_scheduler import run_monthly_period
+from factorlab.monthly_snapshot import capture_month as actual_capture_month
+from factorlab.monthly_scheduler import run_monthly_period as actual_run_monthly_period
 from factorlab.publications import PublicationStore
 from factorlab.publication_contract import PublicationError, CORE_FACTORS
 
 pytestmark = pytest.mark.postgres
 REVISION = 'a'*40
+
+
+# Repository-owned fixture adapters supply explicit identities, never product fallback.
+def capture_month(connect, period):
+    return actual_capture_month(connect,period,selection_event=connect.selection_event,vintage_id=connect.vintage_id)
+def run_monthly_period(connect,period,revision,**kw):
+    return actual_run_monthly_period(connect,period,revision,selection_event=connect.selection_event,vintage_id=connect.vintage_id,**kw)
 
 
 def seed(connect):
@@ -58,6 +65,8 @@ def seed(connect):
                         (r['factor_id'],r['version'],r['formula_hash'],Json(r['params'])))
     finally:
         cx.close()
+    from vintage_samples import install
+    install(connect,payload['month_grid'],'2020-09')
     return payload
 
 
@@ -119,10 +128,10 @@ def test_failed_computation_is_durable_and_retries_without_rewriting_job_log(dat
     good=capture_month(database,'2020-09')
     bad=good.unpack();bad['surprises']=[]
     with pytest.raises(PublicationError,match='insufficient_factor_coverage_sue'):
-        run_monthly_period(database,'2020-09',REVISION,capture=lambda *a:FrozenMonthlyInputs.freeze(bad))
+        run_monthly_period(database,'2020-09',REVISION,capture=lambda *a,**kw:FrozenMonthlyInputs.freeze(bad))
     assert query(database,'SELECT count(*) FROM fl_dataset_generations')==[(0,)]
     assert query(database,'SELECT status FROM fl_monthly_outcomes')==[('failed',)]
-    second=run_monthly_period(database,'2020-09',REVISION,capture=lambda *a:good)
+    second=run_monthly_period(database,'2020-09',REVISION,capture=lambda *a,**kw:good)
     assert second['status']=='published'
     assert query(database,'SELECT status FROM fl_monthly_outcomes ORDER BY finished_at')==[('failed',),('published',)]
     assert legacy_state(database)==before
@@ -185,6 +194,7 @@ def test_read_snapshot_is_stable_across_concurrent_source_updates(database):
         def __init__(self): self.cx=database()
         def __getattr__(self,k): return getattr(self.cx,k)
         def cursor(self): return Cursor(self.cx.cursor())
+    Connection.selection_event=database.selection_event;Connection.vintage_id=database.vintage_id
     data=capture_month(Connection,'2020-09').unpack()
     assert float(next(r for r in data['caps'] if r['security_id']==1)['mktcap'])==float(original)
     assert query(database,"SELECT mktcap FROM mktcap_m WHERE security_id=1")[0][0]==900000000
@@ -207,13 +217,17 @@ def test_source_connection_rejects_writes_during_capture_and_closes(database):
         def __getattr__(self,k): return getattr(self.cx,k)
         def cursor(self): return Cursor(self.cx.cursor())
     import psycopg2
+    Connection.selection_event=database.selection_event;Connection.vintage_id=database.vintage_id
     with pytest.raises(psycopg2.errors.ReadOnlySqlTransaction): capture_month(Connection,'2020-09')
     assert opened[0].closed
     assert query(database,'SELECT count(*) FROM prices_raw_d')[0][0]>0
 
 
 def test_benchmark_gap_fails_before_any_generation(database):
-    seed(database); query(database,"DELETE FROM benchmarks_m WHERE asof='2020-08-31'")
+    payload=seed(database)
+    from vintage_samples import install
+    grid=list(payload['month_grid']);grid[-1]='2020-08-30'
+    install(database,grid,'2020-09',predecessor=database.selection_event)
     with pytest.raises(PublicationError,match='incomplete_benchmark_grid'):
         run_monthly_period(database,'2020-09',REVISION)
     assert query(database,'SELECT count(*) FROM fl_dataset_generations')==[(0,)]
@@ -244,6 +258,7 @@ def test_new_monthly_history_is_immutable(database,table,verb):
 
 
 def test_migration_015_is_required_before_raw_refresh(database):
+    database.selection_event=str(uuid4());database.vintage_id=str(uuid4())
     query(database,'DROP TABLE fl_monthly_outcomes') # isolated fixture only
     touched=[]
     import psycopg2

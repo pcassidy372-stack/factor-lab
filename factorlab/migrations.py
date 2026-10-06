@@ -307,3 +307,7 @@ MIGRATIONS[14] = PUBLICATION_SQL
 # Source-only registration; the scheduler never auto-applies this migration.
 from factorlab.monthly_attempt_schema import MONTHLY_ATTEMPT_SQL
 MIGRATIONS[15] = MONTHLY_ATTEMPT_SQL
+
+# Explicit opt-in benchmark replay/selection. No legacy migration bytes changed.
+from factorlab.benchmark_vintage_schema import BENCHMARK_VINTAGE_SQL
+MIGRATIONS[16] = BENCHMARK_VINTAGE_SQL

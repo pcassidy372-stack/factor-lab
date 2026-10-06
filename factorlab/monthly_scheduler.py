@@ -26,7 +26,7 @@ def _summary(publication, status, attempt_id):
             'unknown_sector_rows': sum(r['sector']=='Unknown' for r in publication['universe'])}
 
 
-def run_monthly_period(connect, period, source_revision, *, refresh=None, capture=capture_month):
+def run_monthly_period(connect, period, source_revision, *, selection_event, vintage_id, refresh=None, capture=capture_month):
     """A confirmed same-code monthly publication is reused, not silently refreshed.
 
     Changed code creates a new generation. Explicit data-only corrections under the
@@ -35,6 +35,9 @@ def run_monthly_period(connect, period, source_revision, *, refresh=None, captur
     """
     require(isinstance(source_revision, str) and re.fullmatch('[0-9a-f]{40}', source_revision),
             'explicit_factorlab_code_sha_required')
+    from .benchmark_vintages import identifier, read_selection
+    from .monthly_producer import fingerprint, PRODUCER_VERSION
+    identifier(selection_event); identifier(vintage_id)
     begin, end = prior_month(period)
     store = PublicationStore(connect)
     cx, attempt_id = store._open(), None
@@ -52,11 +55,14 @@ def run_monthly_period(connect, period, source_revision, *, refresh=None, captur
             attempt_id = uuid4()
             cur.execute('''INSERT INTO fl_monthly_attempts (attempt_id,period_key,source_revision)
                            VALUES (%s,%s,%s)''', (attempt_id, period, source_revision))
-            cur.execute('''SELECT g.generation_id FROM fl_dataset_generations g
+            cur.execute('''SELECT g.generation_id,r.spec->'input_fingerprints'->>'benchmarks' FROM fl_dataset_generations g
                 JOIN fl_publication_requests r USING(request_id)
                 WHERE r.asof >= %s AND r.asof < %s AND r.spec->>'source_revision'=%s
                 ORDER BY g.sealed_at DESC,g.generation_id DESC LIMIT 1''', (begin, end, source_revision))
             found = cur.fetchone()
+            if found:
+                selected = read_selection(cur, period, selection_event, vintage_id)
+                require(found[1] == fingerprint(selected), 'existing_generation_benchmark_identity_mismatch')
         cx.commit()
         if found:
             # Reconcile an already committed generation even when its receipt was lost.
@@ -65,7 +71,10 @@ def run_monthly_period(connect, period, source_revision, *, refresh=None, captur
         else:
             if refresh is not None:
                 refresh()  # Caller must validate all mandatory refresh stages.
-            snapshot = capture(connect, period)
+            snapshot = capture(connect, period, selection_event=selection_event, vintage_id=vintage_id)
+            frozen = snapshot.unpack()
+            require(frozen.get('producer_version') == PRODUCER_VERSION, 'explicit_vintage_execution_required')
+            require(frozen.get('benchmark_identity', {}).get('selection_event_id') == str(selection_event) and frozen['benchmark_identity'].get('vintage_id') == str(vintage_id), 'requested_benchmark_identity_mismatch')
             spec, producer = prepare_publication(snapshot, source_revision)
             require(begin <= date.fromisoformat(spec['asof']) < end,
                     'producer_period_mismatch')

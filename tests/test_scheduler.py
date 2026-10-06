@@ -105,12 +105,16 @@ def test_empty_weekly_scope_fails(scheduler):
 def test_monthly_uses_new_coordinator_not_legacy_rebuild(scheduler, monkeypatch):
     calls = []
     monkeypatch.setenv("FACTORLAB_CODE_SHA", "a" * 40)
+    monkeypatch.setenv("FACTORLAB_BENCHMARK_SELECTION", "11111111-1111-1111-1111-111111111111")
+    monkeypatch.setenv("FACTORLAB_BENCHMARK_VINTAGE", "22222222-2222-2222-2222-222222222222")
     def run(connect, period, revision, **kwargs):
         calls.append((period, revision, kwargs))
         return {"status": "published"}
     monkeypatch.setattr(scheduler, "run_monthly_period", run)
     assert scheduler.job_monthly(ScopeDB(), "2026-09") == {"status": "published"}
     assert calls[0][:2] == ("2026-09", "a" * 40)
+    assert calls[0][2]["selection_event"] == "11111111-1111-1111-1111-111111111111"
+    assert calls[0][2]["vintage_id"] == "22222222-2222-2222-2222-222222222222"
     assert "run_factor_chain" not in vars(scheduler)
     assert "universe_build.py" not in Path(scheduler.__file__).read_text()
 

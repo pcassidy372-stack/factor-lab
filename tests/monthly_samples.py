@@ -19,7 +19,7 @@ def monthly_sample(n=100):
         if d.weekday() < 5:
             days.append(d.isoformat())
         d -= timedelta(days=1)
-    payload = dict(producer_version=PRODUCER_VERSION, asof=asof.isoformat(), month_grid=grid,
+    payload = dict(producer_version='monthly-canonical-five-v1', asof=asof.isoformat(), month_grid=grid,
         observed_at='2020-09-02T14:00:00+00:00', database_snapshot='synthetic',
         security_ids=list(range(1,n+1)), expected_universe=n,
         prices=[], caps=[], profiles=[], symbols=[], adr_history=[], fundamentals=[], returns=[], surprises=[],

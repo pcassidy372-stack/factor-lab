@@ -25,7 +25,8 @@ from .pit import visible_at
 from .publication_contract import (CORE_FACTORS, DATASET, PublicationError, day,
                                    instant, normalize_spec, require)
 
-PRODUCER_VERSION = 'monthly-canonical-five-v1'
+LEGACY_PRODUCER_VERSION = 'monthly-canonical-five-v1'
+PRODUCER_VERSION = 'monthly-canonical-five-v2-benchmark-vintage'
 FIELDS = ('revenue', 'gross_profit', 'ebit', 'net_income', 'cfo', 'capex',
           'total_assets', 'total_debt', 'cash', 'equity', 'shares_dil')
 ND = statistics.NormalDist()
@@ -262,13 +263,18 @@ def calculate_factors(payload, universe):
 
 def prepare_publication(snapshot: FrozenMonthlyInputs, source_revision: str):
     payload = snapshot.unpack()
-    require(payload['producer_version'] == PRODUCER_VERSION, 'producer_contract_drift')
+    require(payload['producer_version'] in (LEGACY_PRODUCER_VERSION, PRODUCER_VERSION), 'producer_contract_drift')
+    if payload['producer_version'] == PRODUCER_VERSION:
+        from .benchmark_vintages import MODE, identifier
+        identity = payload.get('benchmark_identity', {})
+        require(identity.get('mode') == MODE and identity.get('rows') == payload['benchmarks'], 'benchmark_identity_required')
+        identifier(identity['selection_event_id']); identifier(identity['vintage_id'])
     universe = plan_universe(payload)
     groups = {
         'universe': {k: payload[k] for k in ('asof', 'month_grid', 'security_ids', 'prices', 'caps')},
         'classifications': {k: payload[k] for k in ('profiles', 'symbols', 'adr_history')},
         'fundamentals': payload['fundamentals'], 'returns': payload['returns'],
-        'surprises': payload['surprises'], 'benchmarks': payload['benchmarks'],
+        'surprises': payload['surprises'], 'benchmarks': (payload['benchmarks'] if payload['producer_version'] == LEGACY_PRODUCER_VERSION else payload['benchmark_identity']),
         'factor_registry': payload['registry'],
     }
     spec = normalize_spec(dict(dataset=DATASET, asof=payload['asof'], source_revision=source_revision,

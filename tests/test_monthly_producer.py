@@ -181,4 +181,4 @@ def test_missing_code_revision_refused_before_connection():
     from factorlab.monthly_scheduler import run_monthly_period
     def forbidden(): raise AssertionError('invalid source opened database')
     with pytest.raises(PublicationError,match='explicit_factorlab_code_sha_required'):
-        run_monthly_period(forbidden,'2026-09','')
+        run_monthly_period(forbidden,'2026-09','',selection_event='11111111-1111-1111-1111-111111111111',vintage_id='22222222-2222-2222-2222-222222222222')

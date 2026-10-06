@@ -26,8 +26,10 @@ def _rows(cur, query, params=()):
     return [dict(zip(keys, row)) for row in cur.fetchall()]
 
 
-def capture_month(connect, period):
+def capture_month(connect, period, *, selection_event, vintage_id):
     from psycopg2.extensions import STATUS_READY
+    from .benchmark_vintages import identifier, read_selection
+    identifier(selection_event); identifier(vintage_id)
     begin, end = prior_month(period)
     cx = connect()
     try:
@@ -80,12 +82,13 @@ def capture_month(connect, period):
             payload['surprises'] = _rows(cur, '''SELECT security_id,report_date,eps_actual,eps_est,sue
                 FROM surprises WHERE security_id=ANY(%s) AND report_date >= %s AND report_date <= %s
                 ORDER BY security_id,report_date''', (ids, asof - timedelta(days=140), asof))
-            payload['benchmarks'] = _rows(cur, '''SELECT asof,symbol,tr FROM benchmarks_m
-                WHERE symbol='SPY' AND asof=ANY(%s::date[]) ORDER BY asof''', (payload['month_grid'],))
+            benchmark = read_selection(cur, period, selection_event, vintage_id)
+            payload['benchmark_identity'] = benchmark
+            payload['benchmarks'] = benchmark['rows']
             payload['registry'] = _rows(cur, '''SELECT factor_id,version,formula_hash,params,frozen
                 FROM factor_definitions WHERE factor_id=ANY(%s) ORDER BY factor_id''', (list(CORE_FACTORS),))
             # Benchmark is a required upstream review input, not a sixth factor.
-            require({r['asof'] for r in payload['benchmarks']} == set(payload['month_grid']),
+            require({r['asof'] for r in payload['benchmarks']} == {d.isoformat() for d in payload['month_grid']},
                     'incomplete_benchmark_grid')
             require(all(r['tr'] is not None and number(r['tr']) > 0
                         for r in payload['benchmarks']), 'invalid_benchmark_value')

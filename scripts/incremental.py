@@ -265,6 +265,8 @@ def job_monthly(db, period=None):
     # Migration 015 is required before any refresh; no auto-migration occurs.
     return run_monthly_period(conn, period or NOW.strftime("%Y-%m"),
         os.environ.get("FACTORLAB_CODE_SHA", ""),
+        selection_event=os.environ.get("FACTORLAB_BENCHMARK_SELECTION", ""),
+        vintage_id=os.environ.get("FACTORLAB_BENCHMARK_VINTAGE", ""),
         refresh=lambda: refresh_monthly_mktcap(db))
 
 

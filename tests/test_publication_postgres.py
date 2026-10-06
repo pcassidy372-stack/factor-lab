@@ -19,61 +19,10 @@ TABLES = ['fl_publication_requests','fl_publication_attempts','fl_publication_ou
 
 
 @pytest.fixture
-def database():
-    url = os.environ.get('FACTORLAB_TEST_DATABASE_URL')
-    if not url:
-        pytest.skip('No explicit disposable PostgreSQL target; not an integration pass')
-    import psycopg2
-    from psycopg2 import sql
-    from psycopg2.extensions import parse_dsn
-    options = parse_dsn(url)
-    if (options.get('host') != '127.0.0.1' or options.get('dbname') != 'factorlab_ci'
-            or options.get('user') != 'factorlab_ci'
-            or set(options) - {'host','dbname','user','password','port','sslmode'}):
-        pytest.fail('Only explicit loopback factorlab_ci is permitted; target withheld')
-    schema = 'fl_publication_test_' + uuid4().hex
-    admin = psycopg2.connect(url, connect_timeout=5)
-    made = False
-    def connect():
-        cx = psycopg2.connect(url, connect_timeout=5)
-        with cx.cursor() as cur:
-            cur.execute(sql.SQL('SET search_path TO {}, pg_catalog').format(sql.Identifier(schema)))
-            cur.execute("SET statement_timeout='15s'")
-            cur.execute("SET lock_timeout='5s'")
-        cx.commit()
-        return cx
-    try:
-        with admin:
-            with admin.cursor() as cur:
-                cur.execute('SELECT current_database(),current_user')
-                assert cur.fetchone() == ('factorlab_ci','factorlab_ci')
-                cur.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
-        made = True
-        cx = connect()
-        try:
-            from factorlab.migrations import MIGRATIONS
-            with cx:
-                with cx.cursor() as cur:
-                    for n in sorted(MIGRATIONS):
-                        cur.execute(MIGRATIONS[n])
-                    cur.execute("INSERT INTO issuers (issuer_id,cik,name) VALUES (1,'123','Synthetic')")
-                    cur.execute('INSERT INTO securities(security_id,issuer_id) VALUES (1,1),(2,1),(3,1)')
-                    # Preserve actual legacy rows, not just zero-count tables.
-                    cur.execute("INSERT INTO universe_snapshots VALUES ('2019-07-31',1,1,1,1,true,'small')")
-                    cur.execute("""INSERT INTO factor_definitions(factor_id,version,family,formula_text,
-                        formula_hash,params,prior_sign) VALUES ('sue',1,'synthetic','fixture','fixture','{}',1)""")
-                    cur.execute("INSERT INTO factor_values VALUES ('2019-07-31',1,'sue',1,0,0,0)")
-                    cur.execute("INSERT INTO factor_ic VALUES ('sue','2019-07-31',1,0,1)")
-                    cur.execute("INSERT INTO factor_ls VALUES ('sue','2019-07-31',0,0,0,1)")
-        finally:
-            cx.close()
+def database(record_property):
+    from vintage_database import vintage_database
+    with vintage_database(record_property) as connect:
         yield connect
-    finally:
-        if made:
-            with admin:
-                with admin.cursor() as cur:
-                    cur.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
-        admin.close()
 
 
 def query(connect, text, params=()):
