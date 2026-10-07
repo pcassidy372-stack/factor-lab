@@ -5,6 +5,15 @@ from uuid import uuid4
 import pytest
 from benchmark_database import control_options
 
+def fixture_options(url):
+    """Materialize only defaults accepted by the strict disposable-target guard.
+
+    Runtime DSNs feed the public CLI, which deliberately requires explicit route
+    and TLS parameters. This is fixture policy, not an application fallback.
+    """
+    opts = control_options(url)
+    return {'port': '5432', 'sslmode': 'prefer', **opts}
+
 @contextmanager
 def vintage_database(record=lambda *a:None):
     url=os.environ.get('FACTORLAB_TEST_DATABASE_URL')
@@ -12,7 +21,7 @@ def vintage_database(record=lambda *a:None):
     import psycopg2
     from psycopg2 import sql
     from factorlab.migrations import MIGRATIONS
-    opts=control_options(url);token=uuid4().hex;db='fl_vintage_db_'+token;marker='factorlab synthetic vintage fixture '+token
+    opts=fixture_options(url);token=uuid4().hex;db='fl_vintage_db_'+token;marker='factorlab synthetic vintage fixture '+token
     roles={k:'fl_vintage_'+k+'_'+token for k in ('importer','selector','reader','publisher')}
     passwords={k:secrets.token_hex(24) for k in roles};opened=[];made=[];dbmade=False
     admin=psycopg2.connect(**opts,connect_timeout=5);admin.autocommit=True
