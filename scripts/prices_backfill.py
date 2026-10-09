@@ -18,6 +18,7 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from factorlab.fmp_client import FMPClient
 from factorlab.ingest import RDB
+from factorlab.tr_precision import build_levels, gross_series
 
 START = "2011-01-01"
 TODAY = date.today().isoformat()
@@ -93,6 +94,8 @@ def fetch_series(c, symbols, lo, hi):
 
 def rets_from(px, div_by, split_by):
     dates = sorted(px)
+    if dates:
+        gross_series(px, div_by, split_by)
     out = {}
     for i in range(1, len(dates)):
         d0, d1 = dates[i - 1], dates[i]
@@ -112,17 +115,17 @@ def process_security(db, c, sec, symbols, lo, hi):
     rets, dates = rets_from(closes, div_by, split_by)
     orets_pre, _ = rets_from(ora, {}, {})
     n_seam = 0
+    oracle_gross = gross_series(ora, {}, {}) if ora else {}
+    selected_oracle = {}
     for d in list(rets):
         r = rets[d]
         if abs(r) > 2.0 and d not in split_by and d in orets_pre \
                 and abs(r - orets_pre[d]) > 1.5:
             rets[d] = orets_pre[d]          # R16: oracle-corroborated seam repair
+            selected_oracle[d] = oracle_gross[d]
             n_seam += 1
-    level = 100.0
-    tr_rows = [(sec, dates[0], 100.0, TRV)]
-    for d in dates[1:]:
-        level *= (1.0 + rets[d])
-        tr_rows.append((sec, d, round(level, 6), TRV))
+    tr_rows = [(sec, d, level, TRV) for d, level in
+               build_levels(closes, div_by, split_by, oracle_gross=selected_oracle)]
     orets = orets_pre
     common_all = sorted(set(rets) & set(orets))
     bad = [d for d in common_all if abs(orets[d]) > 1.0 and abs(rets[d]) < 0.2]

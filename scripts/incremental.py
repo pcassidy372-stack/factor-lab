@@ -26,6 +26,7 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from factorlab.fmp_client import FMPClient
 from factorlab.ingest import RDB
+from factorlab.tr_precision import gross_return, advance, persist, number, TRInputError
 from factorlab.db import conn
 from factorlab.monthly_scheduler import run_monthly_period
 from factorlab.job_health import (JobFailure, checked_script, due_jobs,
@@ -121,10 +122,6 @@ def job_daily(db):
             return "nodata"
 
         def unit(cur):
-            execute_values(cur, """INSERT INTO prices_raw_d
-                (security_id, d, open, high, low, close, volume) VALUES %s
-                ON CONFLICT (security_id, d) DO NOTHING""",
-                [(sec,) + r for r in new])
             cur.execute("""SELECT d, tr FROM tr_index_d WHERE security_id=%s
                            ORDER BY d DESC LIMIT 1""", (sec,))
             r0 = cur.fetchone()
@@ -132,23 +129,31 @@ def job_daily(db):
                         (sec, last_d))
             base = cur.fetchone()
             if not r0 or not base:
-                return
-            level, prev_close = float(r0[1]), float(base[0])
+                raise TRInputError("missing_TR_seed_or_price")
+            level, prev_close = persist(r0[1]), number(base[0])
+            seed_date, price_date = r0[0], last_d
             cur.execute("""SELECT ex_date, action_type, ratio, amount FROM corp_actions
                            WHERE security_id=%s AND ex_date > %s""", (sec, last_d))
             ev = {}
             for d_, t_, ra, am in cur.fetchall():
-                ev.setdefault(str(d_), {}).update({t_: float(ra or am or 0)})
+                ev.setdefault(str(d_), {}).update({t_: ra if t_ == "split" else am})
             tr_rows = []
             for d_, _, _, _, close, _ in new:
                 e = ev.get(d_, {})
-                ret = (close * e.get("split", 1.0) + e.get("div_cash", 0.0)) / prev_close - 1.0
+                gross = gross_return(prev_close, close, e.get("split", 1), e.get("div_cash", 0))
+                ret = float(gross) - 1.0
                 if abs(ret) > 2.0 and "split" not in e:
                     with lock:
                         counts["JUMP-FLAG"] += 1
-                level *= (1.0 + ret)
-                tr_rows.append((sec, d_, round(level, 6), "tr-v2-window-priority"))
+                level = advance(level, gross, seed_date=seed_date,
+                                price_date=price_date, next_date=d_)
+                tr_rows.append((sec, d_, level, "tr-v2-window-priority"))
                 prev_close = close
+                seed_date = price_date = d_
+            execute_values(cur, """INSERT INTO prices_raw_d
+                (security_id, d, open, high, low, close, volume) VALUES %s
+                ON CONFLICT (security_id, d) DO NOTHING""",
+                [(sec,) + r for r in new])
             if tr_rows:
                 execute_values(cur, """INSERT INTO tr_index_d
                     (security_id, d, tr, method_version) VALUES %s
