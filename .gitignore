@@ -3,3 +3,6 @@ __pycache__/
 artifacts/
 .env
 .DS_Store
+
+.pytest_cache/
+test-results.xml

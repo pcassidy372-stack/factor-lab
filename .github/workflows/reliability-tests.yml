@@ -1,0 +1,65 @@
+name: Factor Lab reliability tests (no deployments)
+on:
+  push:
+    branches: [repair/factor-lab-reliability-20260911]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  review-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Archive only tracked source, with exact provenance
+        run: |
+          mkdir -p review-evidence
+          git rev-parse HEAD > review-evidence/commit.txt
+          git rev-parse HEAD^{tree} > review-evidence/tree.txt
+          git archive --format=zip -o review-evidence/source.zip HEAD
+          sha256sum review-evidence/source.zip > review-evidence/source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: factorlab-review-source
+          path: review-evidence/
+          retention-days: 3
+  postgres-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['16', '18']
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_DB: factorlab_ci
+          POSTGRES_USER: factorlab_ci
+          POSTGRES_PASSWORD: disposable-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U factorlab_ci -d factorlab_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+    env:
+      FACTORLAB_TEST_DATABASE_URL: postgresql://factorlab_ci:disposable-ci-only@127.0.0.1:5432/factorlab_ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-test.txt
+      - run: python -m compileall -q factorlab scripts tests
+      - run: python -m pytest --junitxml=test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: factorlab-tests-pg${{ matrix.postgres }}
+          path: test-results.xml
+          retention-days: 7

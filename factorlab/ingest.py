@@ -36,6 +36,23 @@ class RDB:
                     raise
                 time.sleep(2 * (i + 1))
 
+    def atomic(self, fn):
+        """One transaction, no automatic replay after uncertain commit acknowledgement.
+
+        The caller may retry using the same durable identity. A connection lost
+        during commit must not be labeled a definite rollback or a new insert.
+        Uses a dedicated connection, leaving legacy autocommit work unchanged.
+        """
+        cx = conn()
+        try:
+            cx.autocommit = False
+            with cx:
+                with cx.cursor() as cur:
+                    result = fn(cur)
+            return result
+        finally:
+            cx.close()
+
     def close(self):
         if self._cx is not None and not self._cx.closed:
             self._cx.close()
