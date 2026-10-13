@@ -32,6 +32,15 @@ def text(value):
     return value
 
 
+def mapping_symbol(value):
+    """Retain bounded ASCII mapping data verbatim; never authorize a request."""
+    require(isinstance(value, str) and bool(re.fullmatch(r'[A-Za-z0-9_.:/ -]{1,128}', value)),
+            'invalid_mapping_symbol')
+    # Allowed alphabet is ASCII; explicit byte bound documents the storage contract.
+    require(len(value.encode('utf-8')) <= 128, 'invalid_mapping_symbol')
+    return value
+
+
 def day(value):
     require(isinstance(value, str) and bool(re.fullmatch(r'\d{4}-\d{2}-\d{2}', value)), 'invalid_date')
     try:
@@ -129,7 +138,7 @@ def validate_scope(scope, today=None):
         require(isinstance(m['windows'], list) and len(m['windows']) <= 20, 'window_bound')
         windows = []
         for w in m['windows']:
-            exact_keys(w, ('symbol', 'start', 'end')); text(w['symbol'])
+            exact_keys(w, ('symbol', 'start', 'end')); mapping_symbol(w['symbol'])
             a, b = day(w['start']), day(w['end'])
             if a > b: issue('reversed_window')
             windows.append((a, b))
@@ -183,6 +192,7 @@ def make_plan(scope, selected, limits, today=None):
         require(sid in members, 'unknown_security'); m = members[sid]
         require(m['eligible'] and not m['held'], 'identity_held')
         for w in m['windows']:
+            text(w['symbol'])  # Request policy remains conservative, including on replay.
             requests.setdefault(w['symbol'], []).append({'id': sid, **w})
     require(0 < len(requests) <= limits['logical'] and len(requests) <= limits['attempts'], 'request_budget')
     body = {'scope': scope, 'selected': selected, 'limits': limits, 'coverage': coverage,

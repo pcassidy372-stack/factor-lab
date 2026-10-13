@@ -191,3 +191,23 @@ through actual synthetic acquisition/reconcile. The old adapter options test now
 inspects `_read` directly; separate tests prove its owned-process boundary. Original
 no-overwrite public replay now checks identical verified output/no-op. No numerical
 or privacy assertion is removed. No real acquisition, DB apply or hosted CI occurred.
+
+## Retained mapping versus request symbols
+
+Captured mapping symbols are bounded provenance data:1–128 ASCII characters and
+at most128 UTF-8 bytes, limited to letters,digits,underscore,dot,colon,hyphen,
+ASCII space and slash. They are retained verbatim, without trimming,normalization
+or a claim of provider validity. Controls,NUL,surrogates and other punctuation/
+Unicode refuse. Holds,eligibility and exact-window/cross-security checks still
+apply to every mapping, including non-requested members.
+
+Every selected provider symbol must additionally pass the unchanged conservative
+`[A-Za-z0-9_.:-]{1,128}` request policy. Saved-plan revalidation rebuilds requests
+and rechecks this boundary before credentials or campaign creation. Raw mapping
+strings never supply store/path/operation identifiers; generic text() stays strict.
+
+The document shape remains sue-plan-v2: no field or receipt meaning is changed.
+Implementation identity includes the changed sue_plan.py bytes, so plans made by
+older code fail plan_mismatch under this version even when their shape is v2.
+Do not reseal/rewrite old plans or receipts. The failed real pilot made no plan.
+Create a newly reviewed plan for any future separately authorized acquisition.
