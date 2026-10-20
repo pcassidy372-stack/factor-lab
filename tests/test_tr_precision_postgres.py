@@ -189,9 +189,9 @@ def test_unchanged_monthly_consumer_with_stored_tiny_levels(target,method):
     got=query(target,"SELECT security_id,d,tr,method_version FROM tr_index_d WHERE d>='2019-01-01' ORDER BY security_id,d")
     payload['returns']=[dict(security_id=s,d=d.isoformat(),tr=v,method_version=m) for s,d,v,m in got]
     universe=plan_universe(payload)
-    result,coverage=calculate_factors(payload,universe)
+    result,coverage=calculate_factors(payload,universe,replay=True)
     assert len(result)==500
     assert coverage['mom_12_1']=={'eligible':100,'raw_present':100}
     assert coverage['vol_12m']=={'eligible':100,'raw_present':100}
     payload['returns'][0]['method_version']='unknown'
-    with pytest.raises(Exception,match='unknown_total_return_method'):calculate_factors(payload,universe)
+    with pytest.raises(Exception,match='unknown_total_return_method'):calculate_factors(payload,universe,replay=True)

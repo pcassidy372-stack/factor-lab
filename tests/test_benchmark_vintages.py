@@ -31,8 +31,8 @@ def test_rejected_candidate(fault):
 
 def test_legacy_fingerprint_unchanged():
     from monthly_samples import monthly_sample
-    from factorlab.monthly_producer import FrozenMonthlyInputs,prepare_publication,fingerprint
-    p=monthly_sample();spec,_=prepare_publication(FrozenMonthlyInputs.freeze(p),'a'*40)
+    from factorlab.monthly_producer import FrozenMonthlyInputs,replay_monthly,fingerprint
+    p=monthly_sample();spec=replay_monthly(FrozenMonthlyInputs.freeze(p),'a'*40)['spec']
     assert spec['input_fingerprints']['benchmarks']==fingerprint(p['benchmarks'])
 
 def test_missing_explicit_arguments_no_connection():

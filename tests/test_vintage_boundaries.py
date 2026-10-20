@@ -5,6 +5,7 @@ from factorlab import benchmark_vintages as v
 from factorlab.monthly_producer import fingerprint
 from test_publication_postgres import database
 from vintage_samples import install
+from sue_use_samples import CUTOFF
 from test_benchmark_loader import GRID
 
 def zoned(factory,zone):
@@ -70,7 +71,7 @@ def test_cross_timezone_collection_publication_and_reuse(database,lost_receipt):
     from factorlab.publication_contract import PublicationError
     from uuid import uuid4
     seed(database)
-    args=dict(selection_event=database.selection_event,vintage_id=database.vintage_id)
+    args=dict(selection_event=database.selection_event,vintage_id=database.vintage_id,sue_evidence=database.sue_evidence,research_cutoff=CUTOFF)
     utc=capture_month(zoned(database.runtime('reader'),'UTC'),'2020-09',**args)
     ny=capture_month(zoned(database.runtime('reader'),'America/New_York'),'2020-09',**args)
     assert utc.unpack()['benchmark_identity']==ny.unpack()['benchmark_identity']
@@ -89,7 +90,7 @@ def test_cross_timezone_collection_publication_and_reuse(database,lost_receipt):
     t=v.inspect_target(database.runtime('reader'),allowed_roles=[database.roles['selector']])
     v.select_vintage(database.runtime('selector'),event,'2020-09',database.vintage_id,old,'different synthetic approval',t)
     with pytest.raises(PublicationError,match='existing_generation_benchmark_identity_mismatch'):
-        run_monthly_period(zoned(database.runtime('publisher'),'UTC'),'2020-09','a'*40,selection_event=event,vintage_id=database.vintage_id,refresh=forbidden,capture=forbidden)
+        run_monthly_period(zoned(database.runtime('publisher'),'UTC'),'2020-09','a'*40,selection_event=event,vintage_id=database.vintage_id,sue_evidence=database.sue_evidence,research_cutoff=CUTOFF,refresh=forbidden,capture=forbidden)
     assert query(database,'SELECT count(*) FROM fl_dataset_generations')==[(1,)]
     assert query(database,'SELECT count(*) FROM fl_publication_receipts')==[(1,)]
 

@@ -1,3 +1,4 @@
+from sue_use_samples import evidence,CUTOFF
 from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor
 import pytest
@@ -86,11 +87,11 @@ def test_same_code_different_event_refused_before_confirmation(database):
     from test_monthly_producer_postgres import seed
     from factorlab.monthly_scheduler import run_monthly_period
     seed(database);t=v.inspect_target(database,allowed_roles=list(database.roles.values()));old=database.selection_event
-    run_monthly_period(database.runtime('publisher'),'2020-09','a'*40,selection_event=old,vintage_id=database.vintage_id)
+    run_monthly_period(database.runtime('publisher'),'2020-09','a'*40,selection_event=old,vintage_id=database.vintage_id,sue_evidence=database.sue_evidence,research_cutoff=CUTOFF)
     new=str(uuid4());v.select_vintage(database.runtime('selector'),new,'2020-09',database.vintage_id,old,'new synthetic approval',t)
     before=query(database,'SELECT count(*) FROM fl_publication_receipts')
     with pytest.raises(PublicationError,match='existing_generation_benchmark_identity_mismatch'):
-        run_monthly_period(database.runtime('publisher'),'2020-09','a'*40,selection_event=new,vintage_id=database.vintage_id)
+        run_monthly_period(database.runtime('publisher'),'2020-09','a'*40,selection_event=new,vintage_id=database.vintage_id,sue_evidence=database.sue_evidence,research_cutoff=CUTOFF)
     assert query(database,'SELECT count(*) FROM fl_publication_receipts')==before
     assert query(database,'SELECT count(*) FROM fl_dataset_generations')==[(1,)]
 
@@ -126,23 +127,26 @@ def test_gates_not_bypassed_by_complete_vintage(database,change):
     from factorlab.monthly_scheduler import run_monthly_period
     seed(database)
     query(database, 'UPDATE tr_index_d SET tr=0 WHERE security_id=1' if change=='returns' else 'DELETE FROM surprises')
+    if change=='surprises':
+        from monthly_samples import monthly_sample
+        p=monthly_sample();p['surprises']=[];database.sue_evidence=evidence(p)
     with pytest.raises(PublicationError,match='invalid_return_grid_value|insufficient_factor_coverage_sue'):
-        run_monthly_period(database,'2020-09','a'*40,selection_event=database.selection_event,vintage_id=database.vintage_id)
+        run_monthly_period(database,'2020-09','a'*40,selection_event=database.selection_event,vintage_id=database.vintage_id,sue_evidence=database.sue_evidence,research_cutoff=CUTOFF)
     assert query(database,'SELECT count(*) FROM fl_dataset_generations')==[(0,)]
 
 def test_existing_legacy_generation_refused(database):
     from test_monthly_producer_postgres import seed
     from monthly_samples import monthly_sample
-    from factorlab.monthly_producer import FrozenMonthlyInputs,prepare_publication
+    from factorlab.monthly_producer import FrozenMonthlyInputs,replay_monthly
     from factorlab.publications import PublicationStore
     from factorlab.monthly_scheduler import run_monthly_period
     seed(database);p=monthly_sample()
     from datetime import datetime,timezone
     p['observed_at']=datetime.now(timezone.utc).isoformat()
-    spec,producer=prepare_publication(FrozenMonthlyInputs.freeze(p),'a'*40)
-    PublicationStore(database).publish(spec,producer)
+    old=replay_monthly(FrozenMonthlyInputs.freeze(p),'a'*40)
+    PublicationStore(database).publish(old['spec'],lambda _: (old['universe'],old['factors'])) # explicit synthetic legacy-storage fixture
     with pytest.raises(PublicationError,match='existing_generation_benchmark_identity_mismatch'):
-        run_monthly_period(database,'2020-09','a'*40,selection_event=database.selection_event,vintage_id=database.vintage_id)
+        run_monthly_period(database,'2020-09','a'*40,selection_event=database.selection_event,vintage_id=database.vintage_id,sue_evidence=database.sue_evidence,research_cutoff=CUTOFF)
     assert query(database,'SELECT count(*) FROM fl_dataset_generations')==[(1,)]
 
 def test_pinned_selection_stable_during_new_selection_and_raw_update(database):
@@ -164,7 +168,7 @@ def test_pinned_selection_stable_during_new_selection_and_raw_update(database):
         def __init__(self):self.cx=database.runtime('reader')()
         def __getattr__(self,k):return getattr(self.cx,k)
         def cursor(self):return Cursor(self.cx.cursor())
-    p=capture_month(Connection,'2020-09',selection_event=old,vintage_id=vid).unpack()
+    p=capture_month(Connection,'2020-09',selection_event=old,vintage_id=vid,sue_evidence=database.sue_evidence,research_cutoff=CUTOFF).unpack()
     assert p['benchmark_identity']['selection_event_id']==old
     assert float(next(r['mktcap'] for r in p['caps'] if r['security_id']==1))==float(original)
 

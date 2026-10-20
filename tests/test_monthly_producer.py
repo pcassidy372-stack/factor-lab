@@ -4,11 +4,15 @@ from datetime import date
 import numpy as np
 import pytest
 
-from factorlab.monthly_producer import (FrozenMonthlyInputs, calculate_factors,
+from factorlab.monthly_producer import (FrozenMonthlyInputs, calculate_factors as real_calculate_factors, replay_monthly,
     fingerprint, plan_universe, prepare_publication)
 from factorlab.monthly_snapshot import prior_month
 from factorlab.publication_contract import PublicationError, prepare_rows
 from monthly_samples import monthly_sample
+
+
+def calculate_factors(payload, universe):
+    return real_calculate_factors(payload, universe, replay=True)
 
 
 @pytest.fixture
@@ -18,8 +22,8 @@ def payload():
 
 def test_actual_calculation_builds_complete_explicit_five_factor_grid(payload):
     frozen = FrozenMonthlyInputs.freeze(payload)
-    spec, producer = prepare_publication(frozen, 'a'*40)
-    u, f = producer(spec)
+    replayed = replay_monthly(frozen, 'a'*40)
+    spec, u, f = replayed['spec'], replayed['universe'], replayed['factors']
     assert len(u) == 100 and len(f) == 500
     assert spec['expected_universe'] == spec['expected_investable'] == 100
     assert len(prepare_rows(spec,u,f)[1]) == 500
@@ -150,9 +154,9 @@ def test_accepted_later_restatement_not_selected_by_old_asof(payload):
 
 
 def test_hash_covers_source_vintage_and_classifications_without_rounding(payload):
-    a,_=prepare_publication(FrozenMonthlyInputs.freeze(payload),'a'*40)
+    a=replay_monthly(FrozenMonthlyInputs.freeze(payload),'a'*40)['spec']
     payload['fundamentals'][0]['source_hash']='changed'
-    b,_=prepare_publication(FrozenMonthlyInputs.freeze(payload),'a'*40)
+    b=replay_monthly(FrozenMonthlyInputs.freeze(payload),'a'*40)['spec']
     assert a['input_fingerprints']['fundamentals']!=b['input_fingerprints']['fundamentals']
     assert fingerprint({'a':1.00000000000001})!=fingerprint({'a':1.00000000000002})
 

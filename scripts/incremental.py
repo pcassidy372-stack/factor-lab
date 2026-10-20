@@ -265,13 +265,17 @@ def refresh_monthly_mktcap(db):
     return detail
 
 
-def job_monthly(db, period=None):
+def job_monthly(db, period=None, *, sue_evidence=None, research_cutoff=None):
     # The legacy universe/factor delete-and-rebuild scripts are no longer called.
     # Migration 015 is required before any refresh; no auto-migration occurs.
+    if sue_evidence is None:
+        from factorlab.sue_use_contract import production_resolver
+        production_resolver()
     return run_monthly_period(conn, period or NOW.strftime("%Y-%m"),
         os.environ.get("FACTORLAB_CODE_SHA", ""),
         selection_event=os.environ.get("FACTORLAB_BENCHMARK_SELECTION", ""),
         vintage_id=os.environ.get("FACTORLAB_BENCHMARK_VINTAGE", ""),
+        sue_evidence=sue_evidence, research_cutoff=research_cutoff,
         refresh=lambda: refresh_monthly_mktcap(db))
 
 

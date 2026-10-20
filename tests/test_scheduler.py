@@ -111,10 +111,12 @@ def test_monthly_uses_new_coordinator_not_legacy_rebuild(scheduler, monkeypatch)
         calls.append((period, revision, kwargs))
         return {"status": "published"}
     monkeypatch.setattr(scheduler, "run_monthly_period", run)
-    assert scheduler.job_monthly(ScopeDB(), "2026-09") == {"status": "published"}
+    assert scheduler.job_monthly(ScopeDB(), "2026-09", sue_evidence={"explicit_test_argument": True}, research_cutoff="2099-01-01T00:00:00Z") == {"status": "published"}
     assert calls[0][:2] == ("2026-09", "a" * 40)
     assert calls[0][2]["selection_event"] == "11111111-1111-1111-1111-111111111111"
     assert calls[0][2]["vintage_id"] == "22222222-2222-2222-2222-222222222222"
+    assert calls[0][2]["sue_evidence"] == {"explicit_test_argument": True}
+    assert calls[0][2]["research_cutoff"] == "2099-01-01T00:00:00Z"
     assert "run_factor_chain" not in vars(scheduler)
     assert "universe_build.py" not in Path(scheduler.__file__).read_text()
 

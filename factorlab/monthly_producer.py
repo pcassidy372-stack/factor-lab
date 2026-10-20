@@ -26,7 +26,8 @@ from .publication_contract import (CORE_FACTORS, DATASET, PublicationError, day,
                                    instant, normalize_spec, require)
 
 LEGACY_PRODUCER_VERSION = 'monthly-canonical-five-v1'
-PRODUCER_VERSION = 'monthly-canonical-five-v2-benchmark-vintage'
+BENCHMARK_PRODUCER_VERSION = 'monthly-canonical-five-v2-benchmark-vintage'
+PRODUCER_VERSION = 'monthly-canonical-five-v3-sue-use'
 FIELDS = ('revenue', 'gross_profit', 'ebit', 'net_income', 'cfo', 'capex',
           'total_assets', 'total_debt', 'cash', 'equity', 'shares_dil')
 ND = statistics.NormalDist()
@@ -159,8 +160,21 @@ def _registered(payload):
     return registry
 
 
-def calculate_factors(payload, universe):
+def _sue_qualification(payload):
+    from .sue_use_contract import require_snapshot
+    require(payload.get('sue_evidence') is not None, 'sue_use_evidence_required')
+    qualification = require_snapshot(payload['sue_evidence'],payload['research_cutoff'],payload['surprises'],
+                            payload['sue_history'],payload['security_ids'],payload['asof'])
+    require(instant(qualification['not_before']) <= instant(payload['observed_at']) <= instant(payload['research_cutoff']), 'sue_use_snapshot_availability')
+    return qualification
+
+
+def calculate_factors(payload, universe, *, replay=False):
     """Canonical-five extraction of the existing v2 formulas; no derived-row input."""
+    if payload.get('producer_version') == PRODUCER_VERSION:
+        _sue_qualification(payload)
+    else:
+        require(replay and payload.get('producer_version') in (LEGACY_PRODUCER_VERSION, BENCHMARK_PRODUCER_VERSION), 'sue_use_new_execution_required')
     asof = day(payload['asof']).isoformat()
     grid = payload['month_grid']
     require(len(grid) == 13 and grid[-1] == asof and len(set(grid)) == 13,
@@ -261,10 +275,15 @@ def calculate_factors(payload, universe):
     return out, coverage
 
 
-def prepare_publication(snapshot: FrozenMonthlyInputs, source_revision: str):
+def _prepare(snapshot: FrozenMonthlyInputs, source_revision: str, *, replay=False):
     payload = snapshot.unpack()
-    require(payload['producer_version'] in (LEGACY_PRODUCER_VERSION, PRODUCER_VERSION), 'producer_contract_drift')
-    if payload['producer_version'] == PRODUCER_VERSION:
+    require(payload['producer_version'] in (LEGACY_PRODUCER_VERSION, BENCHMARK_PRODUCER_VERSION, PRODUCER_VERSION), 'producer_contract_drift')
+    qualification = None
+    if not replay:
+        require(payload['producer_version'] == PRODUCER_VERSION, 'sue_use_new_execution_required')
+        qualification = _sue_qualification(payload)
+        require(instant(qualification['not_before']) <= instant(payload['observed_at']) <= instant(payload['research_cutoff']), 'sue_use_snapshot_availability')
+    if payload['producer_version'] in (BENCHMARK_PRODUCER_VERSION, PRODUCER_VERSION):
         from .benchmark_vintages import MODE, identifier
         identity = payload.get('benchmark_identity', {})
         require(identity.get('mode') == MODE and identity.get('rows') == payload['benchmarks'], 'benchmark_identity_required')
@@ -274,7 +293,7 @@ def prepare_publication(snapshot: FrozenMonthlyInputs, source_revision: str):
         'universe': {k: payload[k] for k in ('asof', 'month_grid', 'security_ids', 'prices', 'caps')},
         'classifications': {k: payload[k] for k in ('profiles', 'symbols', 'adr_history')},
         'fundamentals': payload['fundamentals'], 'returns': payload['returns'],
-        'surprises': payload['surprises'], 'benchmarks': (payload['benchmarks'] if payload['producer_version'] == LEGACY_PRODUCER_VERSION else payload['benchmark_identity']),
+        'surprises': qualification if qualification is not None else payload['surprises'], 'benchmarks': (payload['benchmarks'] if payload['producer_version'] == LEGACY_PRODUCER_VERSION else payload['benchmark_identity']),
         'factor_registry': payload['registry'],
     }
     spec = normalize_spec(dict(dataset=DATASET, asof=payload['asof'], source_revision=source_revision,
@@ -283,6 +302,18 @@ def prepare_publication(snapshot: FrozenMonthlyInputs, source_revision: str):
         expected_investable=sum(r['in_universe'] for r in universe)))
     def producer(_spec):
         require(_spec == spec, 'producer_spec_mismatch')
-        factors, _ = calculate_factors(payload, universe)
+        factors, _ = calculate_factors(payload, universe, replay=replay)
         return universe, factors
     return spec, producer
+
+
+def prepare_publication(snapshot: FrozenMonthlyInputs, source_revision: str):
+    return _prepare(snapshot, source_revision)
+
+
+def replay_monthly(snapshot: FrozenMonthlyInputs, source_revision: str):
+    """Explicit diagnostic replay returns data, never a publishing callback."""
+    require(snapshot.unpack()['producer_version'] in (LEGACY_PRODUCER_VERSION, BENCHMARK_PRODUCER_VERSION), 'legacy_replay_only')
+    spec, calculator = _prepare(snapshot, source_revision, replay=True)
+    universe, factors = calculator(spec)
+    return {'spec':spec, 'universe':universe, 'factors':factors, 'publishing_authority':False}

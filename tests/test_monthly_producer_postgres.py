@@ -18,18 +18,21 @@ from factorlab.publications import PublicationStore
 from factorlab.publication_contract import PublicationError, CORE_FACTORS
 
 pytestmark = pytest.mark.postgres
+from sue_use_samples import attach, evidence, CUTOFF
+
 REVISION = 'a'*40
 
 
 # Repository-owned fixture adapters supply explicit identities, never product fallback.
 def capture_month(connect, period):
-    return actual_capture_month(connect,period,selection_event=connect.selection_event,vintage_id=connect.vintage_id)
+    return actual_capture_month(connect,period,selection_event=connect.selection_event,vintage_id=connect.vintage_id,sue_evidence=connect.sue_evidence,research_cutoff=CUTOFF)
 def run_monthly_period(connect,period,revision,**kw):
-    return actual_run_monthly_period(connect,period,revision,selection_event=connect.selection_event,vintage_id=connect.vintage_id,**kw)
+    return actual_run_monthly_period(connect,period,revision,selection_event=connect.selection_event,vintage_id=connect.vintage_id,sue_evidence=kw.pop('sue_evidence',connect.sue_evidence),research_cutoff=CUTOFF,**kw)
 
 
 def seed(connect):
     payload=monthly_sample()
+    connect.sue_evidence=attach(payload)
     cx=connect()
     try:
         with cx:
@@ -55,7 +58,7 @@ def seed(connect):
                 execute_values(cur,'INSERT INTO tr_index_d (security_id,d,tr,method_version) VALUES %s',
                     [(r['security_id'],r['d'],r['tr'],r['method_version']) for r in payload['returns']])
                 execute_values(cur,'INSERT INTO surprises (security_id,report_date,eps_actual,eps_est,sue) VALUES %s',
-                    [(r['security_id'],r['report_date'],r['eps_actual'],r['eps_est'],r['sue']) for r in payload['surprises']])
+                    [(r['security_id'],r['report_date'],r['eps_actual'],r['eps_est'],r['sue']) for r in payload['sue_history']])
                 execute_values(cur,'INSERT INTO benchmarks_m (asof,symbol,tr) VALUES %s',
                     [(r['asof'],r['symbol'],r['tr']) for r in payload['benchmarks']])
                 for r in payload['registry']:
@@ -127,8 +130,9 @@ def test_failed_computation_is_durable_and_retries_without_rewriting_job_log(dat
     before=legacy_state(database)
     good=capture_month(database,'2020-09')
     bad=good.unpack();bad['surprises']=[]
+    attach(bad)
     with pytest.raises(PublicationError,match='insufficient_factor_coverage_sue'):
-        run_monthly_period(database,'2020-09',REVISION,capture=lambda *a,**kw:FrozenMonthlyInputs.freeze(bad))
+        run_monthly_period(database,'2020-09',REVISION,sue_evidence=bad['sue_evidence'],capture=lambda *a,**kw:FrozenMonthlyInputs.freeze(bad))
     assert query(database,'SELECT count(*) FROM fl_dataset_generations')==[(0,)]
     assert query(database,'SELECT status FROM fl_monthly_outcomes')==[('failed',)]
     second=run_monthly_period(database,'2020-09',REVISION,capture=lambda *a,**kw:good)
@@ -194,7 +198,7 @@ def test_read_snapshot_is_stable_across_concurrent_source_updates(database):
         def __init__(self): self.cx=database()
         def __getattr__(self,k): return getattr(self.cx,k)
         def cursor(self): return Cursor(self.cx.cursor())
-    Connection.selection_event=database.selection_event;Connection.vintage_id=database.vintage_id
+    Connection.selection_event=database.selection_event;Connection.vintage_id=database.vintage_id;Connection.sue_evidence=database.sue_evidence
     data=capture_month(Connection,'2020-09').unpack()
     assert float(next(r for r in data['caps'] if r['security_id']==1)['mktcap'])==float(original)
     assert query(database,"SELECT mktcap FROM mktcap_m WHERE security_id=1")[0][0]==900000000
@@ -217,7 +221,7 @@ def test_source_connection_rejects_writes_during_capture_and_closes(database):
         def __getattr__(self,k): return getattr(self.cx,k)
         def cursor(self): return Cursor(self.cx.cursor())
     import psycopg2
-    Connection.selection_event=database.selection_event;Connection.vintage_id=database.vintage_id
+    Connection.selection_event=database.selection_event;Connection.vintage_id=database.vintage_id;Connection.sue_evidence=database.sue_evidence
     with pytest.raises(psycopg2.errors.ReadOnlySqlTransaction): capture_month(Connection,'2020-09')
     assert opened[0].closed
     assert query(database,'SELECT count(*) FROM prices_raw_d')[0][0]>0
@@ -258,7 +262,7 @@ def test_new_monthly_history_is_immutable(database,table,verb):
 
 
 def test_migration_015_is_required_before_raw_refresh(database):
-    database.selection_event=str(uuid4());database.vintage_id=str(uuid4())
+    database.selection_event=str(uuid4());database.vintage_id=str(uuid4());database.sue_evidence=evidence(monthly_sample())
     query(database,'DROP TABLE fl_monthly_outcomes') # isolated fixture only
     touched=[]
     import psycopg2

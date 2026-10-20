@@ -26,7 +26,10 @@ def _rows(cur, query, params=()):
     return [dict(zip(keys, row)) for row in cur.fetchall()]
 
 
-def capture_month(connect, period, *, selection_event, vintage_id):
+def capture_month(connect, period, *, selection_event, vintage_id, sue_evidence=None, research_cutoff=None):
+    from .sue_use_contract import assess, require_snapshot, utc
+    require(sue_evidence is not None, 'sue_use_evidence_required')
+    qualification = assess(sue_evidence, research_cutoff)
     from psycopg2.extensions import STATUS_READY
     from .benchmark_vintages import identifier, read_selection
     identifier(selection_event); identifier(vintage_id)
@@ -82,6 +85,11 @@ def capture_month(connect, period, *, selection_event, vintage_id):
             payload['surprises'] = _rows(cur, '''SELECT security_id,report_date,eps_actual,eps_est,sue
                 FROM surprises WHERE security_id=ANY(%s) AND report_date >= %s AND report_date <= %s
                 ORDER BY security_id,report_date''', (ids, asof - timedelta(days=140), asof))
+            payload['sue_history'] = _rows(cur, '''SELECT security_id,report_date,eps_actual,eps_est,sue
+                FROM surprises WHERE security_id=ANY(%s) AND report_date<=%s ORDER BY security_id,report_date''', (ids,asof))
+            require_snapshot(sue_evidence,research_cutoff,payload['surprises'],payload['sue_history'],ids,asof)
+            payload['sue_evidence'] = sue_evidence
+            payload['research_cutoff'] = utc(research_cutoff)
             benchmark = read_selection(cur, period, selection_event, vintage_id)
             payload['benchmark_identity'] = benchmark
             payload['benchmarks'] = benchmark['rows']
