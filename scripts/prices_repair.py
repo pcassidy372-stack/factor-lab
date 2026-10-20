@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from factorlab.db import conn
 from factorlab.fmp_client import FMPClient, ART
 from factorlab.ingest import RDB
+from factorlab.tr_precision import build_levels, gross_series
 
 TODAY = date.today().isoformat()
 CHUNKS = [("2011-01-01", "2015-12-31"), ("2016-01-01", "2020-12-31"), ("2021-01-01", TODAY)]
@@ -102,6 +103,8 @@ def fetch_windowed(c, wins, lo, hi):
 
 def rets_from(px, div_by, split_by):
     dates = sorted(px)
+    if dates:
+        gross_series(px, div_by, split_by)
     out = {}
     for i in range(1, len(dates)):
         d0, d1 = dates[i - 1], dates[i]
@@ -117,16 +120,16 @@ def repair_one(c, db, sec, wins, lo, hi):
     rets, dates = rets_from(closes, div_by, split_by)
     orets_pre, _ = rets_from(ora, {}, {})
     n_seam = 0
+    oracle_gross = gross_series(ora, {}, {}) if ora else {}
+    selected_oracle = {}
     for d in list(rets):
         r = rets[d]
         if abs(r) > 2.0 and d not in split_by and d in orets_pre and abs(r - orets_pre[d]) > 1.5:
             rets[d] = orets_pre[d]
+            selected_oracle[d] = oracle_gross[d]
             n_seam += 1
-    level = 100.0
-    tr_rows = [(sec, dates[0], 100.0, TRV)]
-    for d in dates[1:]:
-        level *= (1.0 + rets[d])
-        tr_rows.append((sec, d, round(level, 6), TRV))
+    tr_rows = [(sec, d, level, TRV) for d, level in
+               build_levels(closes, div_by, split_by, oracle_gross=selected_oracle)]
     common_all = sorted(set(rets) & set(orets_pre))
     bad = {d for d in common_all if abs(orets_pre[d]) > 1.0 and abs(rets[d]) < 0.2}
     common = [d for d in common_all if d not in bad]
